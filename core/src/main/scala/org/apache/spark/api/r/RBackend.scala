@@ -35,7 +35,7 @@ import org.apache.spark.internal.Logging
 /**
  * Netty-based backend server that is used to communicate between R and Java.
  */
-private[spark] class RBackend {
+class RBackend {
 
   private[this] var channelFuture: ChannelFuture = null
   private[this] var bootstrap: ServerBootstrap = null
