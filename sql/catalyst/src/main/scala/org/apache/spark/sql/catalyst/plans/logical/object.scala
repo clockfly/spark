@@ -61,7 +61,7 @@ trait ObjectProducer extends LogicalPlan {
  * The output of its child must be a single-field row containing the input object.
  */
 trait ObjectConsumer extends UnaryNode {
-  assert(child.output.length == 1)
+  // assert(child.output.length == 1)
 
   // This operator always need all columns of its child, even it doesn't reference to.
   override def references: AttributeSet = child.outputSet
@@ -153,6 +153,7 @@ object MapElements {
       func: AnyRef,
       child: LogicalPlan): LogicalPlan = {
     val deserialized = CatalystSerde.deserialize[T](child)
+
     val mapped = MapElements(
       func,
       CatalystSerde.generateObjAttr[U],
@@ -205,6 +206,11 @@ case class TypedFilter(
     Invoke(funcObj, methodName, BooleanType, input :: Nil)
   }
 }
+
+case class MapExprElements(
+    mapExpr: Expression,
+    outputObjAttr: Attribute,
+    child: LogicalPlan) extends UnaryNode with ObjectProducer
 
 /** Factory for constructing new `AppendColumn` nodes. */
 object AppendColumns {

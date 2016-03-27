@@ -358,6 +358,11 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
+  val CLOSURE_CONVERTER = SQLConfigBuilder("spark.sql.closure.convertToExpr")
+    .doc("TODO: need to write")
+    .booleanConf
+    .createWithDefault(false)
+
   val ORDER_BY_ORDINAL = SQLConfigBuilder("spark.sql.orderByOrdinal")
     .doc("When true, the ordinal numbers are treated as the position in the select list. " +
          "When false, the ordinal numbers in order/sort by clause are ignored.")
@@ -693,6 +698,8 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
   def warehousePath: String = {
     getConf(WAREHOUSE_PATH).replace("${system:user.dir}", System.getProperty("user.dir"))
   }
+
+  override def closureToExprConverter: Boolean = getConf(CLOSURE_CONVERTER)
 
   override def orderByOrdinal: Boolean = getConf(ORDER_BY_ORDINAL)
 
