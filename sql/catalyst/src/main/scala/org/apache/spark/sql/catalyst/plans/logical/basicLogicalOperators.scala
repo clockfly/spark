@@ -271,6 +271,10 @@ case class Join(
     condition: Option[Expression])
   extends BinaryNode with PredicateHelper {
 
+  override def toString(): String = {
+    s"${joinType.sql} Join"
+  }
+
   override def output: Seq[Attribute] = {
     joinType match {
       case j: ExistenceJoin =>
