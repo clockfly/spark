@@ -109,7 +109,7 @@ class TypedColumn[-T, U](
  * @groupname expr_ops Expression operators
  * @groupname df_ops DataFrame functions
  * @groupname Ungrouped Support functions for DataFrames
- *
+ *T
  * @since 1.3.0
  */
 @Experimental

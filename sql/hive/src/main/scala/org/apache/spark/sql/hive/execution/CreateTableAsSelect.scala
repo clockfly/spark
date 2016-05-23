@@ -93,9 +93,7 @@ case class CreateTableAsSelect(
     Seq.empty[Row]
   }
 
-  override def argString: String = {
-    s"[Database:${tableDesc.database}}, " +
-    s"TableName: ${tableDesc.identifier.table}, " +
-    s"InsertIntoHiveTable]"
+  override def stringArgs(verbose: Boolean): Seq[(String, Any)] = {
+    Seq(("Database") -> tableDesc.database, "TableName" -> tableDesc.identifier.table)
   }
 }

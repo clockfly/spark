@@ -422,25 +422,43 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product {
   /**
    * The arguments that should be included in the arg string.  Defaults to the `productIterator`.
    */
-  protected def stringArgs: Iterator[Any] = productIterator
+  protected def stringArgs(verbose: Boolean): Seq[(String, Any)] = {
+    val fieldNames = getConstructorParameterNames(getClass)
+    val fieldValues = productIterator.toSeq ++ otherCopyArgs
+    fieldNames.zip(fieldValues)
+  }
 
   /** Returns a string representing the arguments to this node, minus any children */
-  def argString: String = productIterator.flatMap {
-    case tn: TreeNode[_] if containsChild(tn) => Nil
-    case tn: TreeNode[_] => s"${tn.simpleString}" :: Nil
-    case seq: Seq[BaseType] if seq.toSet.subsetOf(children.toSet) => Nil
-    case seq: Seq[_] => seq.mkString("[", ",", "]") :: Nil
-    case set: Set[_] => set.mkString("{", ",", "}") :: Nil
-    case other => other :: Nil
+  def argString(verbose: Boolean): String = stringArgs(verbose).flatMap {
+    case (name, tn: TreeNode[_]) if containsChild(tn) => Nil
+    case (name, tn: TreeNode[_]) => s"${tn.simpleString}" :: Nil
+    case (name, seq: Seq[BaseType]) if seq.toSet.subsetOf(children.toSet) => Nil
+    case (name, other: Any) => argStringImpl(name, other) :: Nil
   }.mkString(", ")
 
+  private def argStringImpl(name: String, value: Any): String = value match {
+    case tn: TreeNode[_] => s"${tn.simpleString}"
+    case seq: Seq[_] => seq.map(argStringImpl(null, _)).mkString("[", ",", "]")
+    case set: Set[_] => set.map(argStringImpl(null, _)).mkString("{", ",", "}")
+    case None => ""
+    case Some(element) => argStringImpl(name, element)
+    case false => ""
+    case true => if (name == null) "true" else name
+    case (name, other: Any) => other.toString
+  }
+
   /** String representation of this node without any children. */
-  def simpleString: String = s"$nodeName $argString".trim
+  def simpleString: String = s"$nodeName ${argString(false)}".trim
 
   override def toString: String = treeString
 
   /** Returns a string representation of the nodes in this tree */
-  def treeString: String = generateTreeString(0, Nil, new StringBuilder).toString
+  def treeString: String = treeString(verbose = false)
+
+  /** Returns a string representation of the nodes in this tree */
+  def treeString(verbose: Boolean): String = {
+    generateTreeString(0, Nil, new StringBuilder, verbose).toString
+  }
 
   /**
    * Returns a string representation of the nodes in this tree, where each operator is numbered.
@@ -467,7 +485,7 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product {
   }
 
   /**
-   * All the nodes that will be used to generate tree string.
+   * All the child nodes that are used to generate tree string.
    *
    * For example:
    *
@@ -491,7 +509,7 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product {
   protected def treeChildren: Seq[BaseType] = children
 
   /**
-   * All the nodes that are parts of this node.
+   * All the nodes that are parts of this node that are used to generate tree string.
    *
    * For example:
    *
@@ -522,7 +540,8 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product {
    * `lastChildren` for the root node should be empty.
    */
   def generateTreeString(
-      depth: Int, lastChildren: Seq[Boolean], builder: StringBuilder): StringBuilder = {
+      depth: Int, lastChildren: Seq[Boolean], builder: StringBuilder, verbose: Boolean)
+    : StringBuilder = {
     if (depth > 0) {
       lastChildren.init.foreach { isLast =>
         val prefixFragment = if (isLast) "   " else ":  "
@@ -538,13 +557,15 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product {
 
     if (innerChildren.nonEmpty) {
       innerChildren.init.foreach(_.generateTreeString(
-        depth + 2, lastChildren :+ false :+ false, builder))
-      innerChildren.last.generateTreeString(depth + 2, lastChildren :+ false :+ true, builder)
+        depth + 2, lastChildren :+ false :+ false, builder, verbose))
+      innerChildren.last.generateTreeString(
+        depth + 2, lastChildren :+ false :+ true, builder, verbose)
     }
 
     if (treeChildren.nonEmpty) {
-      treeChildren.init.foreach(_.generateTreeString(depth + 1, lastChildren :+ false, builder))
-      treeChildren.last.generateTreeString(depth + 1, lastChildren :+ true, builder)
+      treeChildren.init.foreach(_.generateTreeString(
+        depth + 1, lastChildren :+ false, builder, verbose))
+      treeChildren.last.generateTreeString(depth + 1, lastChildren :+ true, builder, verbose)
     }
 
     builder
