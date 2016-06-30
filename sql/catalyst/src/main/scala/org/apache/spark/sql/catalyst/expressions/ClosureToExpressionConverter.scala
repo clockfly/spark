@@ -48,7 +48,7 @@ object ClosureToExpressionConverter extends Logging {
       method: CtMethod,
       schema: StructType,
       localVars: Array[Expression],
-      stack: mutable.Stack[Expression] = mutable.Stack.empty[Expression],
+      stack: mutable.Stack[Expression] = new mutable.Stack[Expression](),
       pos: Int = 0,
       level: Int = 0): Option[Expression] = {
     logDebug("-" * 80)
