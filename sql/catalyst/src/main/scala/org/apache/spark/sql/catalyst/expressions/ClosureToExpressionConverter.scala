@@ -51,24 +51,22 @@ object ClosureToExpressionConverter extends Logging {
       stack: mutable.Stack[Expression] = new mutable.Stack[Expression](),
       pos: Int = 0,
       level: Int = 0): Option[Expression] = {
-    logDebug("-" * 80)
-    logDebug(s"level: ${level}")
-    logDebug(s"method: ${method.getLongName}")
-    logDebug(s"localVars: ${localVars.toSeq}")
-    logDebug("-" * 80)
+    Console.println("-" * 80)
+    Console.println(s"level: ${level}")
+    Console.println(s"method: ${method.getLongName}")
+    Console.println(s"localVars: ${localVars.toSeq}")
+    Console.println("-" * 80)
 
     val instructions = method.getMethodInfo().getCodeAttribute.iterator()
     // Move the point of current instruction to given position (default is zero).
     instructions.move(pos)
     val constPool = method.getMethodInfo.getConstPool
 
-    if (log.isDebugEnabled) {
-      val codes = method.getMethodInfo().getCodeAttribute.iterator()
-      while (codes.hasNext) {
-        val pos = codes.next()
-        val code = InstructionPrinter.instructionString(codes, pos, constPool)
-        logDebug(s"${pos}: ${code}")
-      }
+    val codes = method.getMethodInfo().getCodeAttribute.iterator()
+    while (codes.hasNext) {
+      val pos = codes.next()
+      val code = InstructionPrinter.instructionString(codes, pos, constPool)
+      Console.println(s"${pos}: ${code}")
     }
 
     def ldc(pos: Int): Any = _ldc(pos, instructions.byteAt(pos + 1))
@@ -103,7 +101,7 @@ object ClosureToExpressionConverter extends Logging {
       // Fetch next op code
       val pos = instructions.next()
       val op = instructions.byteAt(pos)
-      logDebug("*" * 20 + " " + InstructionPrinter.instructionString(instructions, pos, constPool)
+      Console.println("*" * 20 + " " + InstructionPrinter.instructionString(instructions, pos, constPool)
         + s" (pos=$pos, level=$level stack=${stack.size}}) " + "*" * 20)
 
       // TODO: check supports, ops and #parameters
@@ -354,12 +352,12 @@ object ClosureToExpressionConverter extends Logging {
               val fieldNumber = stackHead.asInstanceOf[Literal].value.asInstanceOf[Int]
               stack.push(IsNull(UnresolvedAttribute(schema.fields(fieldNumber).name)))
             } else {
-              logInfo("TODO: error message")
+              Console.println("TODO: error message")
               return None
             }
           } else {
             // TODO: error message
-            logInfo("TODO: error message")
+            Console.println("TODO: error message")
             return None
           }
 
@@ -382,7 +380,7 @@ object ClosureToExpressionConverter extends Logging {
                 (0 until numParameters).map(_ => stack.pop)
                 stack.push(expr)
               case None =>
-                logInfo("problem analyzing static method call")
+                Console.println("problem analyzing static method call")
                 return None
             }
           }
@@ -400,7 +398,7 @@ object ClosureToExpressionConverter extends Logging {
                   val name = field.replace("$mcI$sp", "")
                   stack.push(UnresolvedAttribute(name))
                 case _ =>
-                  logInfo(s"unknown target ${target.getName}")
+                  Console.println(s"unknown target ${target.getName}")
                   return None
               }
             case _ =>
@@ -415,7 +413,7 @@ object ClosureToExpressionConverter extends Logging {
                   (0 to numParameters).map(_ => stack.pop)
                   stack.push(expr)
                 case None =>
-                  logInfo("problem analyzing method call")
+                  Console.println("problem analyzing method call")
                   return None
               }
           }
@@ -430,7 +428,7 @@ object ClosureToExpressionConverter extends Logging {
                 "java.lang.Long", "java.lang.Float", "java.lang.Double").contains(cls) =>
               // Do nothing here
             case _ =>
-              logInfo(s"unknown GETFIELD target: ${target.getName}")
+              Console.println(s"unknown GETFIELD target: ${target.getName}")
               return None
           }
 
@@ -440,7 +438,7 @@ object ClosureToExpressionConverter extends Logging {
           if (target.getName == "java.lang.Boolean") {
             stack.push(Literal(java.lang.Boolean.valueOf(targetField)))
           } else {
-            logInfo(s"unknown GETSTATIC target: ${target.getName}")
+            Console.println(s"unknown GETSTATIC target: ${target.getName}")
             return None
           }
 
@@ -448,18 +446,18 @@ object ClosureToExpressionConverter extends Logging {
           return Some(stack.top)
 
         case _ =>
-          logInfo(s"unknown opcode $op");
+          Console.println(s"unknown opcode $op");
           return None
       }
 
       if (log.isDebugEnabled()) {
         stack.zipWithIndex.foreach { case (expr, idx) =>
-          logDebug(s"  $idx=$expr")
+          Console.println(s"  $idx=$expr")
         }
       }
     }
 
-    logInfo("oh no!")
+    Console.println("oh no!")
     return None
   }
 
@@ -477,31 +475,42 @@ object ClosureToExpressionConverter extends Logging {
 
   // TODO: handle argument types
   // For now, this assumes f: Row => Expression
+  private[spark]
   def convert(closure: Object, schema: StructType): Option[Expression] = try {
     val clazz = closure.getClass
     classPool.insertClassPath(new ClassClassPath(clazz))
     val ctClass = classPool.get(clazz.getName)
     val applyMethods = ctClass.getMethods.filter(_.getName == "apply")
+
+    Console.println("checkIfConversion======================================" + applyMethods.size)
     // Take the apply() that has the minimum number of converted expressions
+
+
     applyMethods.flatMap { method =>
-      logDebug(" \n  " * 10)
+      Console.println(" \n  " * 10)
       assert(method.getParameterTypes.length == 1)
       val expr = if (isStatic(method)) {
+
+        Console.println("STATIC================" + method)
+
         analyzeMethod(method, schema, toLocalVars(UnresolvedAttribute("value")))
       } else {
+
+        Console.println("NON STATIC================" + method)
+
         analyzeMethod(method, schema, toLocalVars(UnresolvedAttribute("this"),
           UnresolvedAttribute("value")))
       }
       expr.map { e =>
         val numExpr = e.collect { case e => true }.size
-        logInfo(s"numExpr:${numExpr} expr:${e}")
+        Console.println(s"numExpr:${numExpr} expr:${e}")
         (numExpr, e)
       }
     }.sortBy(_._1).map(_._2).headOption
   } catch {
     // Fall back to a regular path
     case e: Exception =>
-      logInfo(s"failed to convert into exprs because ${e.getMessage}")
+      Console.println(s"failed to convert into exprs because ${e.getMessage}")
       None
   }
 
@@ -512,6 +521,7 @@ object ClosureToExpressionConverter extends Logging {
   def convertFilter(closure: Object, schema: StructType): Option[Expression] = {
     // TODO: If optimized plans have any casts in filters, it seems codegen does not work well.
     // Later, we'll need to look into this issue.
+
     convert(closure, schema).map { expr => Cast(expr, BooleanType) }
   }
 

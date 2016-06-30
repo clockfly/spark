@@ -28,6 +28,7 @@ import org.apache.spark.sql.types._
 class ClosureToExpressionConverterSuite extends SparkFunSuite with ExpressionEvalHelper {
 
   def checkIfConversion[T: TypeTag](func: T => Boolean, expected: Expression): Unit = {
+
     assert(ClosureToExpressionConverter.convertFilter(func, ExpressionEncoder[T]().schema).get
       === Cast(If(expected, Literal(0), Literal(1)), BooleanType))
   }
