@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.analysis._
  */
 trait CatalystConf {
   def caseSensitiveAnalysis: Boolean
-
+  def closureTranslation: Boolean
   def orderByOrdinal: Boolean
   def groupByOrdinal: Boolean
 
@@ -49,6 +49,7 @@ trait CatalystConf {
 /** A CatalystConf that can be used for local testing. */
 case class SimpleCatalystConf(
     caseSensitiveAnalysis: Boolean,
+    closureTranslation: Boolean = false,
     orderByOrdinal: Boolean = true,
     groupByOrdinal: Boolean = true,
     optimizerMaxIterations: Int = 100,

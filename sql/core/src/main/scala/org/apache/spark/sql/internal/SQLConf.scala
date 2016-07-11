@@ -347,6 +347,12 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
+    val CLOSURE_TRANSLATION = SQLConfigBuilder("spark.sql.translateClosure")
+      .doc("When true, we will try to do optimization by translating closures to " +
+        "catalyst Expressions.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ORDER_BY_ORDINAL = SQLConfigBuilder("spark.sql.orderByOrdinal")
     .doc("When true, the ordinal numbers are treated as the position in the select list. " +
          "When false, the ordinal numbers in order/sort by clause are ignored.")
@@ -678,6 +684,8 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
   def variableSubstituteDepth: Int = getConf(VARIABLE_SUBSTITUTE_DEPTH)
 
   def warehousePath: String = getConf(WAREHOUSE_PATH)
+
+  override def closureTranslation: Boolean = getConf(CLOSURE_TRANSLATION)
 
   override def orderByOrdinal: Boolean = getConf(ORDER_BY_ORDINAL)
 

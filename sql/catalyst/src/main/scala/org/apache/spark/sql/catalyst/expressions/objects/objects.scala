@@ -690,8 +690,13 @@ case class AssertNotNull(child: Expression, walkedTypePath: Seq[String])
   override def foldable: Boolean = false
   override def nullable: Boolean = false
 
-  override def eval(input: InternalRow): Any =
-    throw new UnsupportedOperationException("Only code-generated evaluation is supported.")
+  override def eval(input: InternalRow): Any = {
+    val result = child.eval(input)
+    if (result == null) {
+      throw new RuntimeException("Null value appeared in non-nullable field");
+    }
+    result
+  }
 
   override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
     val childGen = child.genCode(ctx)
