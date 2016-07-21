@@ -39,7 +39,7 @@ def print_err(msg):
 def post_message_to_github(msg, ghprb_pull_id):
     print("Attempting to post to Github...")
 
-    url = "https://api.github.com/repos/apache/spark/issues/" + ghprb_pull_id + "/comments"
+    url = "https://api.github.com/repos/databricks/spark/issues/" + ghprb_pull_id + "/comments"
     github_oauth_key = os.environ["GITHUB_OAUTH_KEY"]
 
     posted_message = json.dumps({"body": msg})
@@ -178,7 +178,7 @@ def main():
     build_display_name = os.environ["BUILD_DISPLAY_NAME"]
     build_url = os.environ["BUILD_URL"]
 
-    commit_url = "https://github.com/apache/spark/commit/" + ghprb_actual_commit
+    commit_url = "https://github.com/databricks/spark/commit/" + ghprb_actual_commit
 
     # GitHub doesn't auto-link short hashes when submitted via the API, unfortunately. :(
     short_commit_hash = ghprb_actual_commit[0:7]

@@ -305,11 +305,11 @@ def get_hadoop_profiles(hadoop_version):
     """
 
     sbt_maven_hadoop_profiles = {
-        "hadoop2.2": ["-Pyarn", "-Phadoop-2.2"],
-        "hadoop2.3": ["-Pyarn", "-Phadoop-2.3"],
-        "hadoop2.4": ["-Pyarn", "-Phadoop-2.4"],
-        "hadoop2.6": ["-Pyarn", "-Phadoop-2.6"],
-        "hadoop2.7": ["-Pyarn", "-Phadoop-2.7"],
+        "hadoop2.2": ["-Phadoop-2.2"],
+        "hadoop2.3": ["-Phadoop-2.3"],
+        "hadoop2.4": ["-Phadoop-2.4"],
+        "hadoop2.6": ["-Phadoop-2.6"],
+        "hadoop2.7": ["-Phadoop-2.7"],
     }
 
     if hadoop_version in sbt_maven_hadoop_profiles:
@@ -540,13 +540,14 @@ def main():
     test_modules = determine_modules_to_test(changed_modules)
 
     # license checks
-    run_apache_rat_checks()
+    # run_apache_rat_checks()
 
     # style checks
     if not changed_files or any(f.endswith(".scala")
                                 or f.endswith("scalastyle-config.xml")
                                 for f in changed_files):
-        run_scala_style_checks()
+        #run_scala_style_checks()
+        pass
     if not changed_files or any(f.endswith(".java")
                                 or f.endswith("checkstyle.xml")
                                 or f.endswith("checkstyle-suppressions.xml")
@@ -554,9 +555,11 @@ def main():
         # run_java_style_checks()
         pass
     if not changed_files or any(f.endswith(".py") for f in changed_files):
-        run_python_style_checks()
+        pass
+        #run_python_style_checks()
     if not changed_files or any(f.endswith(".R") for f in changed_files):
-        run_sparkr_style_checks()
+        pass
+        #run_sparkr_style_checks()
 
     # determine if docs were changed and if we're inside the amplab environment
     # note - the below commented out until *all* Jenkins workers can get `jekyll` installed
