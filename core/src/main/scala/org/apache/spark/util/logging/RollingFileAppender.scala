@@ -19,11 +19,11 @@ package org.apache.spark.util.logging
 
 import java.io.{File, FileFilter, InputStream}
 
+import scala.util.matching.Regex
+
 import com.google.common.io.Files
 
 import org.apache.spark.SparkConf
-
-import scala.util.matching.Regex
 
 /**
  * Continuously appends data from input stream into the given file, and rolls
