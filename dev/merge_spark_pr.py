@@ -33,16 +33,20 @@ import urllib2
 
 try:
     import jira.client
-    JIRA_IMPORTED = True
+    JIRA_IMPORTED = False
 except ImportError:
     JIRA_IMPORTED = False
+
+DB_SPARK_REPO = "git@github.com:databricks/spark.git"
 
 # Location of your Spark git development area
 SPARK_HOME = os.environ.get("SPARK_HOME", os.getcwd())
 # Remote name which points to the Gihub site
-PR_REMOTE_NAME = os.environ.get("PR_REMOTE_NAME", "apache-github")
+# PR_REMOTE_NAME = os.environ.get("PR_REMOTE_NAME", "apache-github")
+PR_REMOTE_NAME = "databricks-spark-merge-script-special-remote"
 # Remote name which points to Apache git
-PUSH_REMOTE_NAME = os.environ.get("PUSH_REMOTE_NAME", "apache")
+# PUSH_REMOTE_NAME = os.environ.get("PUSH_REMOTE_NAME", "apache")
+PUSH_REMOTE_NAME = PR_REMOTE_NAME
 # ASF JIRA username
 JIRA_USERNAME = os.environ.get("JIRA_USERNAME", "")
 # ASF JIRA password
@@ -54,8 +58,8 @@ JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD", "")
 GITHUB_OAUTH_KEY = os.environ.get("GITHUB_OAUTH_KEY")
 
 
-GITHUB_BASE = "https://github.com/apache/spark/pull"
-GITHUB_API_BASE = "https://api.github.com/repos/apache/spark"
+GITHUB_BASE = "https://github.com/databricks/spark/pull"
+GITHUB_API_BASE = "https://api.github.com/repos/databricks/spark"
 JIRA_BASE = "https://issues.apache.org/jira/browse"
 JIRA_API_BASE = "https://issues.apache.org/jira"
 # Prefix added to temporary branches
@@ -110,6 +114,11 @@ def clean_up():
 
 # merge the requested PR and return the merge hash
 def merge_pr(pr_num, target_ref, title, body, pr_repo_desc):
+    remotes = run_cmd("git remote")
+    if PR_REMOTE_NAME in remotes:
+        run_cmd("git remote rm %s" % PR_REMOTE_NAME)
+    run_cmd("git remote add %s %s" % (PR_REMOTE_NAME, DB_SPARK_REPO))
+
     pr_branch_name = "%s_MERGE_PR_%s" % (BRANCH_PREFIX, pr_num)
     target_branch_name = "%s_MERGE_PR_%s_%s" % (BRANCH_PREFIX, pr_num, target_ref.upper())
     run_cmd("git fetch %s pull/%s/head:%s" % (PR_REMOTE_NAME, pr_num, pr_branch_name))
