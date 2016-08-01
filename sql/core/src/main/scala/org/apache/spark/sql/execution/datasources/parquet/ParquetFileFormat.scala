@@ -394,8 +394,13 @@ private[sql] class ParquetFileFormat
         // This is a horrible erasure hack...  if we type the iterator above, then it actually check
         // the type in next() and we get a class cast exception.  If we make that function return
         // Object, then we can defer the cast until later!
-        iter.asInstanceOf[Iterator[InternalRow]]
+
+        if (partitionSchema.toAttributes.length == 0) {
+          iter.asInstanceOf[Iterator[InternalRow]]
+        } else {
+          iter.asInstanceOf[Iterator[InternalRow]]
             .map(d => appendPartitionColumns(joinedRow(d, file.partitionValues)))
+        }
       }
     }
   }

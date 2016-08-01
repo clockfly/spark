@@ -93,6 +93,7 @@ class FileScanRDD(
       private[this] val files = split.asInstanceOf[FilePartition].files.toIterator
       private[this] var currentFile: PartitionedFile = null
       private[this] var currentIterator: Iterator[Object] = null
+      private[this] var recordsRead = 0
 
       def hasNext: Boolean = (currentIterator != null && currentIterator.hasNext) || nextIterator()
       def next(): Object = {
@@ -100,11 +101,13 @@ class FileScanRDD(
         // TODO: we should have a better separation of row based and batch based scan, so that we
         // don't need to run this `if` for every record.
         if (nextElement.isInstanceOf[ColumnarBatch]) {
-          inputMetrics.incRecordsRead(nextElement.asInstanceOf[ColumnarBatch].numRows())
+          recordsRead += nextElement.asInstanceOf[ColumnarBatch].numRows()
         } else {
-          inputMetrics.incRecordsRead(1)
+          recordsRead += 1
         }
-        if (inputMetrics.recordsRead % SparkHadoopUtil.UPDATE_INPUT_METRICS_INTERVAL_RECORDS == 0) {
+        if (recordsRead > SparkHadoopUtil.UPDATE_INPUT_METRICS_INTERVAL_RECORDS) {
+          inputMetrics.incRecordsRead(recordsRead)
+          recordsRead = 0
           updateBytesRead()
         }
         nextElement
@@ -141,6 +144,8 @@ class FileScanRDD(
 
       override def close(): Unit = {
         updateBytesRead()
+        inputMetrics.incRecordsRead(recordsRead)
+        recordsRead = 0
         updateBytesReadWithFileSize()
         InputFileNameHolder.unsetInputFileName()
       }
