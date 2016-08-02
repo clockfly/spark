@@ -59,8 +59,8 @@ object FileScanRDD {
 }
 
 class FileScanRDD(
-    @transient private val sparkSession: SparkSession,
-    readFunction: (PartitionedFile) => Iterator[InternalRow],
+    @transient private[sql] val sparkSession: SparkSession,
+    private[sql] val readFunction: (PartitionedFile) => Iterator[InternalRow],
     @transient val filePartitions: Seq[FilePartition])
   extends RDD[InternalRow](sparkSession.sparkContext, Nil) {
 

@@ -421,6 +421,12 @@ object SQLConf {
     .booleanConf
     .createWithDefault(true)
 
+  val PARTITION_PRUNING = SQLConfigBuilder("spark.sql.dynamicPartitionPruning")
+    .internal()
+    .doc("When true, we will generate predicate for partition column when it's used as join key")
+    .booleanConf
+    .createWithDefault(true)
+
   val WHOLESTAGE_CODEGEN_ENABLED = SQLConfigBuilder("spark.sql.codegen.wholeStage")
     .internal()
     .doc("When true, the whole stage (of multiple operators) will be compiled into single java" +
@@ -691,6 +697,8 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
   def dataFrameRetainGroupColumns: Boolean = getConf(DATAFRAME_RETAIN_GROUP_COLUMNS)
 
   override def runSQLonFile: Boolean = getConf(RUN_SQL_ON_FILES)
+
+  def partitionPruning: Boolean = getConf(PARTITION_PRUNING)
 
   def vectorizedAggregateMapMaxColumns: Int = getConf(VECTORIZED_AGG_MAP_MAX_COLUMNS)
 

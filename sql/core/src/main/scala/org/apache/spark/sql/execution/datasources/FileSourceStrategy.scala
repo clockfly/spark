@@ -72,7 +72,7 @@ private[sql] object FileSourceStrategy extends Strategy with Logging {
       val normalizedFilters = filters.map { e =>
         e transform {
           case a: AttributeReference =>
-            a.withName(l.output.find(_.semanticEquals(a)).get.name)
+            a.withName(l.output.find(_.semanticEquals(a)).getOrElse(a).name)
         }
       }
 
@@ -93,7 +93,9 @@ private[sql] object FileSourceStrategy extends Strategy with Logging {
       val afterScanFilters = filterSet -- partitionKeyFilters
       logInfo(s"Post-Scan Filters: ${afterScanFilters.mkString(",")}")
 
-      val selectedPartitions = files.location.listFiles(partitionKeyFilters.toSeq)
+      val (withSubquery, withoutSubquery) =
+        partitionKeyFilters.partition(_.find(_.isInstanceOf[SubqueryExpression]).isDefined)
+      val selectedPartitions = files.location.listFiles(withoutSubquery.toSeq)
 
       val filterAttributes = AttributeSet(afterScanFilters)
       val requiredExpressions: Seq[NamedExpression] = filterAttributes.toSeq ++ projects
@@ -217,7 +219,8 @@ private[sql] object FileSourceStrategy extends Strategy with Logging {
             plannedPartitions),
           files,
           meta,
-          table)
+          table,
+          withSubquery.reduceLeftOption(And))
 
       val afterScanFilter = afterScanFilters.toSeq.reduceOption(expressions.And)
       val withFilter = afterScanFilter.map(execution.FilterExec(_, scan)).getOrElse(scan)
