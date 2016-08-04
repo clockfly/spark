@@ -32,9 +32,9 @@ import org.apache.spark.unsafe.KVIterator
  * An iterator used to evaluate aggregate functions. It operates on [[UnsafeRow]]s.
  *
  * This iterator first uses hash-based aggregation to process input rows. It uses
- * a hash map to store groups and their corresponding aggregation buffers. If we
- * this map cannot allocate memory from memory manager, it spill the map into disk
- * and create a new one. After processed all the input, then merge all the spills
+ * a hash map to store groups and their corresponding aggregation buffers. If
+ * this map cannot allocate memory from memory manager, it spills the map into disk
+ * and creates a new one. After processed all the input, then merge all the spills
  * together using external sorter, and do sort-based aggregation.
  *
  * The process has the following step:
@@ -127,7 +127,7 @@ class TungstenAggregationIterator(
   }
 
   // Creates a function used to generate output rows.
-  override protected def generateResultProjection(): (UnsafeRow, MutableRow) => UnsafeRow = {
+  override protected def generateResultProjection(): (InternalRow, MutableRow) => UnsafeRow = {
     val modes = aggregateExpressions.map(_.mode).distinct
     if (modes.nonEmpty && !modes.contains(Final) && !modes.contains(Complete)) {
       // Fast path for partial aggregation, UnsafeRowJoiner is usually faster than projection
@@ -137,8 +137,10 @@ class TungstenAggregationIterator(
       val bufferSchema = StructType.fromAttributes(bufferAttributes)
       val unsafeRowJoiner = GenerateUnsafeRowJoiner.create(groupingKeySchema, bufferSchema)
 
-      (currentGroupingKey: UnsafeRow, currentBuffer: MutableRow) => {
-        unsafeRowJoiner.join(currentGroupingKey, currentBuffer.asInstanceOf[UnsafeRow])
+      (currentGroupingKey: InternalRow, currentBuffer: MutableRow) => {
+        unsafeRowJoiner.join(
+          currentGroupingKey.asInstanceOf[UnsafeRow],
+          currentBuffer.asInstanceOf[UnsafeRow])
       }
     } else {
       super.generateResultProjection()

@@ -530,6 +530,13 @@ object SQLConf {
       .intConf
       .createWithDefault(3)
 
+  val OBJECT_AGG_FALLBACK_COUNT_THRESHOLD =
+    SQLConfigBuilder("spark.sql.objectHashAggregate.fallbackCountThreshold")
+      .internal()
+      .doc("")
+      .intConf
+      .createWithDefault(1024)
+
   val FILE_SINK_LOG_DELETION = SQLConfigBuilder("spark.sql.streaming.fileSink.log.deletion")
     .internal()
     .doc("Whether to delete the expired log files in file stream sink.")
@@ -702,6 +709,8 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
   def partitionPruning: Boolean = getConf(PARTITION_PRUNING)
 
   def vectorizedAggregateMapMaxColumns: Int = getConf(VECTORIZED_AGG_MAP_MAX_COLUMNS)
+
+  def objectAggregateFallbackCountThreshold: Int = getConf(OBJECT_AGG_FALLBACK_COUNT_THRESHOLD)
 
   def variableSubstituteEnabled: Boolean = getConf(VARIABLE_SUBSTITUTE_ENABLED)
 
