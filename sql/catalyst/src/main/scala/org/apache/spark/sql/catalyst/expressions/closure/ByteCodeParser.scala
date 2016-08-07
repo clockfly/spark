@@ -83,20 +83,30 @@ object ByteCodeParser {
 
   }
 
-  private val OPCODES = ("NOP,ACONST_NULL,ICONST_M1,ICONST_0,ICONST_1,ICONST_2,ICONST_3,ICONST_4," +
-    "ICONST_5,LCONST_0,LCONST_1,FCONST_0,FCONST_1,FCONST_2,DCONST_0,DCONST_1,BIPUSH,SIPUSH,LDC,,," +
-    "ILOAD,LLOAD,FLOAD,DLOAD,ALOAD,,,,,,,,,,,,,,,,,,,,,IALOAD,LALOAD,FALOAD,DALOAD,AALOAD,BALOAD," +
-    "CALOAD,SALOAD,ISTORE,LSTORE,FSTORE,DSTORE,ASTORE,,,,,,,,,,,,,,,,,,,,,IASTORE,LASTORE," +
-    "FASTORE,DASTORE,AASTORE,BASTORE,CASTORE,SASTORE,POP,POP2,DUP,DUP_X1,DUP_X2,DUP2,DUP2_X1," +
-    "DUP2_X2,SWAP,IADD,LADD,FADD,DADD,ISUB,LSUB,FSUB,DSUB,IMUL,LMUL,FMUL,DMUL,IDIV,LDIV,FDIV," +
-    "DDIV,IREM,LREM,FREM,DREM,INEG,LNEG,FNEG,DNEG,ISHL,LSHL,ISHR,LSHR,IUSHR,LUSHR,IAND,LAND,IOR," +
-    "LOR,IXOR,LXOR,IINC,I2L,I2F,I2D,L2I,L2F,L2D,F2I,F2L,F2D,D2I,D2L,D2F,I2B,I2C,I2S,LCMP,FCMPL," +
-    "FCMPG,DCMPL,DCMPG,IFEQ,IFNE,IFLT,IFGE,IFGT,IFLE,IF_ICMPEQ,IF_ICMPNE,IF_ICMPLT,IF_ICMPGE," +
-    "IF_ICMPGT,IF_ICMPLE,IF_ACMPEQ,IF_ACMPNE,GOTO,JSR,RET,TABLESWITCH,LOOKUPSWITCH,IRETURN," +
-    "LRETURN,FRETURN,DRETURN,ARETURN,RETURN,GETSTATIC,PUTSTATIC,GETFIELD,PUTFIELD," +
-    "INVOKEVIRTUAL,INVOKESPECIAL,INVOKESTATIC,INVOKEINTERFACE,INVOKEDYNAMIC,NEW,NEWARRAY," +
-    "ANEWARRAY,ARRAYLENGTH,ATHROW,CHECKCAST,INSTANCEOF,MONITORENTER,MONITOREXIT,,MULTIANEWARRAY," +
-    "IFNULL,IFNONNULL,").split(",")
+  // OPcode names. The array index is the Opcode.
+  // Opcode list: https://en.wikipedia.org/wiki/Java_bytecode_instruction_listings
+  private val OPCODES =
+    Array("NOP", "ACONST_NULL", "ICONST_M1", "ICONST_0", "ICONST_1",
+      "ICONST_2", "ICONST_3", "ICONST_4", "ICONST_5", "LCONST_0", "LCONST_1", "FCONST_0",
+      "FCONST_1", "FCONST_2", "DCONST_0", "DCONST_1", "BIPUSH", "SIPUSH", "LDC", "", "",
+      "ILOAD", "LLOAD", "FLOAD", "DLOAD", "ALOAD", "", "", "", "", "", "", "", "", "", "",
+      "", "", "", "", "", "", "", "", "", "", "IALOAD", "LALOAD", "FALOAD", "DALOAD", "AALOAD",
+      "BALOAD", "CALOAD", "SALOAD", "ISTORE", "LSTORE", "FSTORE", "DSTORE", "ASTORE",
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+      "IASTORE", "LASTORE", "FASTORE", "DASTORE", "AASTORE", "BASTORE", "CASTORE", "SASTORE",
+      "POP", "POP2", "DUP", "DUP_X1", "DUP_X2", "DUP2", "DUP2_X1", "DUP2_X2", "SWAP", "IADD",
+      "LADD", "FADD", "DADD", "ISUB", "LSUB", "FSUB", "DSUB", "IMUL", "LMUL", "FMUL", "DMUL",
+      "IDIV", "LDIV", "FDIV", "DDIV", "IREM", "LREM", "FREM", "DREM", "INEG", "LNEG", "FNEG",
+      "DNEG", "ISHL", "LSHL", "ISHR", "LSHR", "IUSHR", "LUSHR", "IAND", "LAND", "IOR", "LOR",
+      "IXOR", "LXOR", "IINC", "I2L", "I2F", "I2D", "L2I", "L2F", "L2D", "F2I", "F2L", "F2D",
+      "D2I", "D2L", "D2F", "I2B", "I2C", "I2S", "LCMP", "FCMPL", "FCMPG", "DCMPL", "DCMPG",
+      "IFEQ", "IFNE", "IFLT", "IFGE", "IFGT", "IFLE", "IF_ICMPEQ", "IF_ICMPNE", "IF_ICMPLT",
+      "IF_ICMPGE", "IF_ICMPGT", "IF_ICMPLE", "IF_ACMPEQ", "IF_ACMPNE", "GOTO", "JSR", "RET",
+      "TABLESWITCH", "LOOKUPSWITCH", "IRETURN", "LRETURN", "FRETURN", "DRETURN", "ARETURN",
+      "RETURN", "GETSTATIC", "PUTSTATIC", "GETFIELD", "PUTFIELD", "INVOKEVIRTUAL",
+      "INVOKESPECIAL", "INVOKESTATIC", "INVOKEINTERFACE", "INVOKEDYNAMIC", "NEW", "NEWARRAY",
+      "ANEWARRAY", "ARRAYLENGTH", "ATHROW", "CHECKCAST", "INSTANCEOF", "MONITORENTER",
+      "MONITOREXIT", "", "MULTIANEWARRAY", "IFNULL", "IFNONNULL")
 
   def opString(opcode: Int): Option[String] = {
     if (opcode > 0 && opcode < OPCODES.length) {
@@ -124,30 +134,34 @@ object ByteCodeParser {
     override def children: List[Node] = List(node)
   }
 
-  sealed trait NullaryNode extends Node {
+  sealed trait LeafNode extends Node {
     override def children: List[Node] = List.empty[Node]
   }
 
-  case object VOID extends NullaryNode {
+  // Represents void return type
+  case object VOID extends LeafNode {
     override def dataType: Type = VOID_TYPE
   }
 
-  case class Constant[T: ClassTag](value: T) extends NullaryNode {
+  case class Constant[T: ClassTag](value: T) extends LeafNode {
     def dataType: Type = getType(classTag[T].runtimeClass)
     override def toString: String = s"$value"
   }
 
-  case class Argument(dataType: Type) extends NullaryNode {
+  // Represents input argument of closure
+  case class Argument(dataType: Type) extends LeafNode {
     override def toString: String = s"Argument"
   }
 
-  case class This(dataType: Type) extends NullaryNode {
+  // Represents the closure object.
+  case class This(dataType: Type) extends LeafNode {
     override def toString: String = "This"
   }
 
   // if (condition == true) left else right
   case class If(condition: Node, left: Node, right: Node, dataType: Type) extends BinaryNode
 
+  // Represents function call. if it is a static function call, then obj is null.
   case class FunctionCall(
       obj: Node,
       className: String,
@@ -165,11 +179,13 @@ object ByteCodeParser {
     }
   }
 
-  case class Static(clazz: String, name: String, dataType: Type) extends NullaryNode
+  // Represents a static field access.
+  case class StaticField(clazz: String, name: String, dataType: Type) extends LeafNode
 
+  // Does a type cast.
   case class Cast(node: Node, dataType: Type) extends UnaryNode
 
-  // operator +, -, *, /, <, >, ==, !=, <=, >=, !
+  // operator +, -, *, /, <, >, ==, !=, <=, >=, !. For "!", the right is null.
   case class Arithmetic(
       operator: String,
       left: Node,
@@ -511,11 +527,32 @@ object ByteCodeParser {
   }
 }
 
+/**
+ * Parses the closure and generate a Node tree to represent the computation of the closure.
+ *
+ * For example, closure (v: )
+ * {{{
+ *   // Scala
+ *   (v: Int) => { v > 0 }
+ * }}}
+ *
+ * is translated to:
+ * {{{
+ *   Arithmetic[Z](>)
+ *     Argument[I]
+ *     Constant[I](0)
+ * }}}
+ *
+ */
 class ByteCodeParser {
   import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser._
   import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser.DSL._
 
   def parse(closure: Class[_], argumentType: Class[_]): Node = {
+    // The Scala closure use apply as method name, sometimes it has a suffix, like apply$mcI$sp
+    // The Java closure we use like MapFunction use call as method name.
+    // The pattern match here make sure we only parse the Scala closure method or Java closure
+    // method. Other methods are ignored.
     val defaultNamePattern = "call|apply(\\$mc.*\\$sp)?"
     parse(closure, argumentType, defaultNamePattern)
   }
@@ -530,6 +567,10 @@ class ByteCodeParser {
    * @throws ByteCodeParserException
    */
   def parse(closure: Class[_], argumentType: Class[_], methodNamePattern: String): Node = {
+    // Scala compiler may automatically generates multiple apply methods with different argument
+    // type, like apply(obj: Object), apply(v: Int), apply$mcI$sp(v: Int). Some apply method
+    // may delegates call to another apply method. Here we tries to gather as more candidate apply
+    // method as possible during the scan of closure byte code. We will do disambiguation later.
     var candidateMethods = List.empty[MethodNode]
     val closureResource = Thread.currentThread().getContextClassLoader
       .getResourceAsStream(closure.getName.replace('.', '/') + ".class")
@@ -547,6 +588,8 @@ class ByteCodeParser {
           candidateMethods = method :: candidateMethods
           method
         } else {
+          // null means MethodVisitor is not defined, thus, byte code of this method will be
+          // skipped during scan to improve performance.
           null
         }
       }
@@ -568,20 +611,27 @@ class ByteCodeParser {
       }
     }, 0)
 
+    // Disambiguation
     val applyMethods = resolve(candidateMethods)
 
     if (applyMethods.length == 0) {
+      // Throws error if there is no apply method or argument type mismatches expected type.
       throw new ByteCodeParserException(s"Cannot find an apply method in closure " +
         s"${closure.getName}. The expected argument type is: ${argumentType.getName}")
     } else if (applyMethods.length > 1) {
+      // Scala compiler may generates multiple apply methods with same input argument type but
+      // different return type.
       throw new ByteCodeParserException(s"Found multiple ambiguous apply methods with signature " +
         s"${applyMethods.map(_.desc).mkString(", ")}")
     }
-    // Pick the first one if there are multiple apply methods found
     analyze(closure, applyMethods.head)
   }
 
   // Proxy method delegates the call to another method.
+  // Example:
+  // {{{
+  //   apply(v: AnyRef): AnyRef = apply(v.toInt)
+  // }}}
   private def isProxyMethod(method: MethodNode): Boolean = {
     val instructions = method.instructions.toArray.toList.filterNot(isPseudo(_))
     instructions match {
@@ -601,6 +651,7 @@ class ByteCodeParser {
     candidates.filterNot(isProxyMethod(_))
   }
 
+  // Translates the applyMethod to Node tree.
   private def analyze(closure: Class[_], applyMethod: MethodNode): Node = {
     if (applyMethod.tryCatchBlocks.size() != 0) {
       throw new ByteCodeParserException("try...catch... is not supported in ByteCodeParser")
@@ -616,6 +667,8 @@ class ByteCodeParser {
         case _ => inputArgument
       }
     }
+
+    // To simulate the local variables in apply method like "var x = 0".
     var localVars = Map.empty[Int, Node]
     localVars += 0 -> This(getType(closure))
     localVars += 1 -> argument
@@ -654,6 +707,7 @@ class ByteCodeParser {
         tracer.trace(stack, node)
 
         node match {
+          // non-static/static function call instructions
           case method: MethodInsnNode =>
             method.getOpcode match {
               case INVOKEVIRTUAL | INVOKESTATIC | INVOKESPECIAL | INVOKEINTERFACE =>
@@ -669,21 +723,22 @@ class ByteCodeParser {
                 }
                 push(FunctionCall(obj, className, methodName, arguments, returnType))
             }
-
+          // non-static/static field access instructions.
           case field: FieldInsnNode =>
             field.getOpcode match {
               case GETSTATIC =>
                 val className = getObjectType(field.owner).getClassName
                 val dataType = getType(field.desc)
-                push(Static(className, field.name, dataType))
+                push(StaticField(className, field.name, dataType))
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
+          // instructions that has a integer as operand
           case intInstruction: IntInsnNode =>
             intInstruction.getOpcode match {
               case BIPUSH | SIPUSH => push(Constant(intInstruction.operand))
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
-
+          // instruction that takes a type descriptor as parameter
           case typeInstruction: TypeInsnNode =>
             typeInstruction.getOpcode match {
               case CHECKCAST => // skip
@@ -691,11 +746,13 @@ class ByteCodeParser {
                 push(cast(input, getObjectType(typeInstruction.desc)))
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
+          // Increments an integer in local var.
           case inc: IincInsnNode =>
             val index = inc.`var`
             val increase = inc.incr
             val localVar = localVars(index)
             localVars += index -> plus(localVar, Constant(increase))
+          // Jump instructions
           case jump: JumpInsnNode =>
             // comparator: <, >, ==, <=, >=
             def compareAndJump(comparator: (Node, Node) => Node): Node = {
@@ -706,6 +763,7 @@ class ByteCodeParser {
                 // Jump to immediate next instruction
                 invoke(instructions, instructions.indexOf(jump.label), stack, localVars)
               } else {
+                // If the condition is a - b > 0, translates it to a > b
                 val condition = left match {
                   case a@Arithmetic("-", _, _, _) if right == Constant(0) =>
                     comparator(a.left, a.right)
@@ -714,6 +772,7 @@ class ByteCodeParser {
 
                 ifElse(condition,
                   invoke(instructions, instructions.indexOf(jump.label), stack, localVars),
+                  // Otherwise, jump to next instruction
                   invoke(instructions, index + 1, stack, localVars)
                 )
               }
@@ -765,6 +824,7 @@ class ByteCodeParser {
                 index = instructions.indexOf(jump.label) - 1
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
+          // load constant instructions to stack
           case load: LdcInsnNode =>
             val constant = load.cst
             constant match {
@@ -777,6 +837,7 @@ class ByteCodeParser {
                 throw new UnsupportedOpcodeException(load.getOpcode, s"LDC only supports type " +
                   s"Int, Float, Double, Long and String, current type is ${other.getClass.getName}")
             }
+          // load/store value from/to local variable.
           case localVar: VarInsnNode =>
             val index = localVar.`var`
             localVar.getOpcode match {
@@ -787,9 +848,11 @@ class ByteCodeParser {
                 localVars += index -> top
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
+          // Instructions that don't have an operand.
           case op: InsnNode =>
             op.getOpcode match {
               case NOP => // Skip
+              // Load constants to stack
               case ACONST_NULL => push(Constant(null))
               case ICONST_M1 => push(Constant(-1))
               case ICONST_0 => push(Constant(0))
@@ -805,6 +868,7 @@ class ByteCodeParser {
               case FCONST_2 => push(Constant(2F))
               case DCONST_0 => push(Constant(0D))
               case DCONST_1 => push(Constant(1D))
+              // Arithmetic operations
               case IADD | LADD | FADD | DADD =>
                 val right = pop()
                 val left = pop()
@@ -849,6 +913,7 @@ class ByteCodeParser {
                 val right = pop()
                 val left = pop()
                 push(bitwiseXor(left, right))
+              // Cast operations
               case I2L | F2L | D2L =>
                 push(cast[Long](pop))
               case L2I | F2I | D2I =>
@@ -860,6 +925,7 @@ class ByteCodeParser {
               case I2B => push(cast[Int](cast[Byte](pop)))  // Sign-extended to an int
               case I2S => push(cast[Int](cast[Short](pop))) // Sign-extended to an int
               case I2C => push(cast[Int](cast[Char](pop))) // Zero-extended to an int
+              // long/float/double compare and jump instructions.
               case LCMP | FCMPL | FCMPG | DCMPL | DCMPG =>
                 val jump = instructions.get(index + 1).getOpcode match {
                   case IFEQ | IFNE | IFLT | IFGT | IFLE | IFGE =>
@@ -871,7 +937,7 @@ class ByteCodeParser {
                         s"by a jump instruction like IFEQ, IFNE, IFLT, IFGT, IFLE, IFGE")
                 }
 
-                // Rewrite the op...
+                // Rewrite the op to reuse the code for integer compare and jump.
                 jump.getOpcode match {
                   case IFEQ => jump.setOpcode(IF_ICMPEQ)
                   case IFNE => jump.setOpcode(IF_ICMPNE)
@@ -880,11 +946,15 @@ class ByteCodeParser {
                   case IFLE => jump.setOpcode(IF_ICMPLE)
                   case IFGE => jump.setOpcode(IF_ICMPGE)
                 }
+              // stack operations.
               case POP | POP2 | DUP | DUP2 | DUP_X1 | DUP_X2 | DUP2_X1 | DUP2_X2 | SWAP =>
                 // Each data type has a category, which affects the behavior of stack operations.
                 // JVM Category 2 types: Long, Double.
                 // JVM Category 1 types: Boolean, Byte, Char,Short, Int, Float, Reference,
                 // ReturnAddress.
+                // For example, POP2 only pop 1 category 2 data type, but pops 2 category 1 data
+                // type.
+                //
                 // @See https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-2.html#jvms-2.11.1
                 val stackCategories = stack.toList.map(_.dataType).map { dataType =>
                   dataType match {
@@ -893,6 +963,8 @@ class ByteCodeParser {
                   }
                 }.slice(0, 4) // Stack operations like DUP2_X2 at max use 4 stack slots.
 
+                // @See https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html to find
+                // how these stack operations work.
                 (op.getOpcode, stackCategories) match {
                   case (POP, 1::_) => pop()
                   case (POP2, 1::1::_) =>

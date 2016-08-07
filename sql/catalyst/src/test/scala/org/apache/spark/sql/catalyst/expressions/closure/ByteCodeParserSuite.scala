@@ -32,7 +32,7 @@ import org.apache.xbean.asm5.Type._
 import org.apache.xbean.asm5.tree.{ClassNode, InsnNode, LdcInsnNode, MethodNode}
 
 import org.apache.spark.SparkFunSuite
-import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser.{opString, Argument, Cast, Constant, FunctionCall, Node, Static, This, UnsupportedOpcodeException}
+import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser.{opString, Argument, Cast, Constant, FunctionCall, Node, StaticField, This, UnsupportedOpcodeException}
 import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParserSuite.{A, CreateClosureWithStackClassLoader}
 
 class ByteCodeParserSuite extends SparkFunSuite {
@@ -99,7 +99,7 @@ class ByteCodeParserSuite extends SparkFunSuite {
     val parser = new ByteCodeParser
     val staticNode = parser.parse(getStatic.getClass, classOf[Int])
     staticNode match {
-      case FunctionCall(Static(_, "MODULE$", _), className, "ZERO", _, _) =>
+      case FunctionCall(StaticField(_, "MODULE$", _), className, "ZERO", _, _) =>
         assert(className == ByteCodeParserSuite.getClass.getName)
       case _ => fail
     }
@@ -285,7 +285,7 @@ class ByteCodeParserSuite extends SparkFunSuite {
     assert(parse(returnChar) == Cast(Argument(Type.INT_TYPE), Type.CHAR_TYPE))
     assert(parse(returnObject) == Argument(Type.getType(classOf[java.lang.Object])))
     assert(parse(returnVoid) == ByteCodeParser.VOID)
-    assert(parse(returnUnit) == Static("scala.Unit$", "MODULE$", getType(scala.Unit.getClass)))
+    assert(parse(returnUnit) == StaticField("scala.Unit$", "MODULE$", getType(scala.Unit.getClass)))
   }
 
   test("arithmetic operation instructions, +, -, *, /, %, NEG, INC") {
