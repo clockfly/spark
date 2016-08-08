@@ -680,7 +680,7 @@ class ByteCodeParser {
                       s"(${stackCategories}) don't match the opcode's requirements.")
                 }
               case DRETURN | FRETURN | IRETURN | LRETURN | ARETURN =>
-                result = Some(pop())@
+                result = Some(pop())
               case RETURN =>
                 result = Some(VOID)
               case _ => throw new UnsupportedOpcodeException(opcode)

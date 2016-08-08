@@ -41,7 +41,6 @@ import org.apache.xbean.asm5.Type._
 sealed trait Node {
   def children: List[Node]
   def dataType: Type
-  def copy(): Node = this
   def treeString: String = {
     val builder = new StringBuilder
     def simpleString: PartialFunction[Node, String] = {
@@ -145,7 +144,9 @@ case class Arithmetic(
   right: Node,
   dataType: Type) extends BinaryNode {
 
-  require(Set("+", "-", "*", "/", "<", ">", "==", "!=", "<=", ">=", "!").contains(operator))
+  private val validOperators =
+    Set("+", "-", "*", "/", "%", "<", ">", "==", "!=", "<=", ">=", "!", "&", "|", "^")
+  require(validOperators.contains(operator))
   if (operator == "!") {
     require(right == Constant(false))
   }
