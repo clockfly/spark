@@ -459,7 +459,7 @@ class ByteCodeParser {
                 index = instructions.indexOf(jump.label) - 1
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
-          // Loads constant instructions to stack
+          // Loads constant to stack
           case load: LdcInsnNode =>
             val constant = load.cst
             constant match {
