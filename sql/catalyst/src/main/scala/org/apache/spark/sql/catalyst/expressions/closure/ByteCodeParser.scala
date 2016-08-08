@@ -17,19 +17,48 @@
 
 package org.apache.spark.sql.catalyst.expressions.closure
 
-import scala.reflect.ClassTag
-import scala.reflect.classTag
-
 import org.apache.xbean.asm5.{ClassReader, ClassVisitor, Label, MethodVisitor, Type}
 import org.apache.xbean.asm5.Opcodes._
 import org.apache.xbean.asm5.Type._
 import org.apache.xbean.asm5.tree.{AbstractInsnNode, FieldInsnNode, FrameNode, IincInsnNode, InsnList, InsnNode, IntInsnNode, JumpInsnNode, LabelNode, LdcInsnNode, LineNumberNode, MethodInsnNode, MethodNode, TypeInsnNode, VarInsnNode}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.closure.DSL._
 
 object ByteCodeParser {
 
-  class ByteCodeParserException(message: String) extends ClosureTranslationException(message, null)
+  // OPcode names. The array index is the Opcode.
+  // Opcode list: https://en.wikipedia.org/wiki/Java_bytecode_instruction_listings
+  private val OPCODES =
+    Array("NOP", "ACONST_NULL", "ICONST_M1", "ICONST_0", "ICONST_1",
+      "ICONST_2", "ICONST_3", "ICONST_4", "ICONST_5", "LCONST_0", "LCONST_1", "FCONST_0",
+      "FCONST_1", "FCONST_2", "DCONST_0", "DCONST_1", "BIPUSH", "SIPUSH", "LDC", "", "",
+      "ILOAD", "LLOAD", "FLOAD", "DLOAD", "ALOAD", "", "", "", "", "", "", "", "", "", "",
+      "", "", "", "", "", "", "", "", "", "", "IALOAD", "LALOAD", "FALOAD", "DALOAD", "AALOAD",
+      "BALOAD", "CALOAD", "SALOAD", "ISTORE", "LSTORE", "FSTORE", "DSTORE", "ASTORE",
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+      "IASTORE", "LASTORE", "FASTORE", "DASTORE", "AASTORE", "BASTORE", "CASTORE", "SASTORE",
+      "POP", "POP2", "DUP", "DUP_X1", "DUP_X2", "DUP2", "DUP2_X1", "DUP2_X2", "SWAP", "IADD",
+      "LADD", "FADD", "DADD", "ISUB", "LSUB", "FSUB", "DSUB", "IMUL", "LMUL", "FMUL", "DMUL",
+      "IDIV", "LDIV", "FDIV", "DDIV", "IREM", "LREM", "FREM", "DREM", "INEG", "LNEG", "FNEG",
+      "DNEG", "ISHL", "LSHL", "ISHR", "LSHR", "IUSHR", "LUSHR", "IAND", "LAND", "IOR", "LOR",
+      "IXOR", "LXOR", "IINC", "I2L", "I2F", "I2D", "L2I", "L2F", "L2D", "F2I", "F2L", "F2D",
+      "D2I", "D2L", "D2F", "I2B", "I2C", "I2S", "LCMP", "FCMPL", "FCMPG", "DCMPL", "DCMPG",
+      "IFEQ", "IFNE", "IFLT", "IFGE", "IFGT", "IFLE", "IF_ICMPEQ", "IF_ICMPNE", "IF_ICMPLT",
+      "IF_ICMPGE", "IF_ICMPGT", "IF_ICMPLE", "IF_ACMPEQ", "IF_ACMPNE", "GOTO", "JSR", "RET",
+      "TABLESWITCH", "LOOKUPSWITCH", "IRETURN", "LRETURN", "FRETURN", "DRETURN", "ARETURN",
+      "RETURN", "GETSTATIC", "PUTSTATIC", "GETFIELD", "PUTFIELD", "INVOKEVIRTUAL",
+      "INVOKESPECIAL", "INVOKESTATIC", "INVOKEINTERFACE", "INVOKEDYNAMIC", "NEW", "NEWARRAY",
+      "ANEWARRAY", "ARRAYLENGTH", "ATHROW", "CHECKCAST", "INSTANCEOF", "MONITORENTER",
+      "MONITOREXIT", "", "MULTIANEWARRAY", "IFNULL", "IFNONNULL")
+
+  def opString(opcode: Int): Option[String] = {
+    if (opcode > 0 && opcode < OPCODES.length) {
+      Some(OPCODES(opcode))
+    } else {
+      None
+    }
+  }
 
   class UnsupportedOpcodeException(
     opcode: Int,
@@ -80,396 +109,6 @@ object ByteCodeParser {
   private def isLoadInstruction(inst: AbstractInsnNode): Boolean = inst.getOpcode match {
     case ILOAD | LLOAD | FLOAD | DLOAD | ALOAD => true
     case _ => false
-
-  }
-
-  // OPcode names. The array index is the Opcode.
-  // Opcode list: https://en.wikipedia.org/wiki/Java_bytecode_instruction_listings
-  private val OPCODES =
-    Array("NOP", "ACONST_NULL", "ICONST_M1", "ICONST_0", "ICONST_1",
-      "ICONST_2", "ICONST_3", "ICONST_4", "ICONST_5", "LCONST_0", "LCONST_1", "FCONST_0",
-      "FCONST_1", "FCONST_2", "DCONST_0", "DCONST_1", "BIPUSH", "SIPUSH", "LDC", "", "",
-      "ILOAD", "LLOAD", "FLOAD", "DLOAD", "ALOAD", "", "", "", "", "", "", "", "", "", "",
-      "", "", "", "", "", "", "", "", "", "", "IALOAD", "LALOAD", "FALOAD", "DALOAD", "AALOAD",
-      "BALOAD", "CALOAD", "SALOAD", "ISTORE", "LSTORE", "FSTORE", "DSTORE", "ASTORE",
-      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-      "IASTORE", "LASTORE", "FASTORE", "DASTORE", "AASTORE", "BASTORE", "CASTORE", "SASTORE",
-      "POP", "POP2", "DUP", "DUP_X1", "DUP_X2", "DUP2", "DUP2_X1", "DUP2_X2", "SWAP", "IADD",
-      "LADD", "FADD", "DADD", "ISUB", "LSUB", "FSUB", "DSUB", "IMUL", "LMUL", "FMUL", "DMUL",
-      "IDIV", "LDIV", "FDIV", "DDIV", "IREM", "LREM", "FREM", "DREM", "INEG", "LNEG", "FNEG",
-      "DNEG", "ISHL", "LSHL", "ISHR", "LSHR", "IUSHR", "LUSHR", "IAND", "LAND", "IOR", "LOR",
-      "IXOR", "LXOR", "IINC", "I2L", "I2F", "I2D", "L2I", "L2F", "L2D", "F2I", "F2L", "F2D",
-      "D2I", "D2L", "D2F", "I2B", "I2C", "I2S", "LCMP", "FCMPL", "FCMPG", "DCMPL", "DCMPG",
-      "IFEQ", "IFNE", "IFLT", "IFGE", "IFGT", "IFLE", "IF_ICMPEQ", "IF_ICMPNE", "IF_ICMPLT",
-      "IF_ICMPGE", "IF_ICMPGT", "IF_ICMPLE", "IF_ACMPEQ", "IF_ACMPNE", "GOTO", "JSR", "RET",
-      "TABLESWITCH", "LOOKUPSWITCH", "IRETURN", "LRETURN", "FRETURN", "DRETURN", "ARETURN",
-      "RETURN", "GETSTATIC", "PUTSTATIC", "GETFIELD", "PUTFIELD", "INVOKEVIRTUAL",
-      "INVOKESPECIAL", "INVOKESTATIC", "INVOKEINTERFACE", "INVOKEDYNAMIC", "NEW", "NEWARRAY",
-      "ANEWARRAY", "ARRAYLENGTH", "ATHROW", "CHECKCAST", "INSTANCEOF", "MONITORENTER",
-      "MONITOREXIT", "", "MULTIANEWARRAY", "IFNULL", "IFNONNULL")
-
-  def opString(opcode: Int): Option[String] = {
-    if (opcode > 0 && opcode < OPCODES.length) {
-      Some(OPCODES(opcode))
-    } else {
-      None
-    }
-  }
-
-  sealed trait Node {
-    def children: List[Node]
-    def dataType: Type
-    def copy(): Node = this
-    def treeString: String = ByteCodeParser.treeString(this)
-  }
-
-  sealed trait BinaryNode extends Node {
-    def left: Node
-    def right: Node
-    override def children: List[Node] = List(left, right)
-  }
-
-  sealed trait UnaryNode extends Node {
-    def node: Node
-    override def children: List[Node] = List(node)
-  }
-
-  sealed trait LeafNode extends Node {
-    override def children: List[Node] = List.empty[Node]
-  }
-
-  // Represents void return type
-  case object VOID extends LeafNode {
-    override def dataType: Type = VOID_TYPE
-  }
-
-  case class Constant[T: ClassTag](value: T) extends LeafNode {
-    def dataType: Type = getType(classTag[T].runtimeClass)
-    override def toString: String = s"$value"
-  }
-
-  // Represents input argument of closure
-  case class Argument(dataType: Type) extends LeafNode {
-    override def toString: String = s"Argument"
-  }
-
-  // Represents the closure object.
-  case class This(dataType: Type) extends LeafNode {
-    override def toString: String = "This"
-  }
-
-  // if (condition == true) left else right
-  case class If(condition: Node, left: Node, right: Node, dataType: Type) extends BinaryNode
-
-  // Represents function call. if it is a static function call, then obj is null.
-  case class FunctionCall(
-      obj: Node,
-      className: String,
-      method: String,
-      arguments: List[Node],
-      dataType: Type)
-    extends Node {
-    def children: List[Node] = obj::arguments
-    override def toString: String = {
-      if (obj == null) {
-        s"$className.$method(${arguments.mkString(", ")})"
-      } else {
-        s"$className.$method(${(obj::arguments).mkString(", ")})"
-      }
-    }
-  }
-
-  // Represents a static field access.
-  case class StaticField(clazz: String, name: String, dataType: Type) extends LeafNode
-
-  // Does a type cast.
-  case class Cast(node: Node, dataType: Type) extends UnaryNode
-
-  // operator +, -, *, /, <, >, ==, !=, <=, >=, !. For "!", the right is null.
-  case class Arithmetic(
-      operator: String,
-      left: Node,
-      right: Node,
-      dataType: Type) extends BinaryNode {
-    override def toString: String = {
-      val leftString = if (left.children.length > 1) s"($left)" else s"$left"
-      val rightString = if (right.children.length > 1) s"($right)" else s"$right"
-      if (operator == "!") {
-        s"$operator$leftString"
-      } else {
-        s"$leftString $operator $rightString"
-      }
-    }
-  }
-
-  def treeString(node: Node): String = {
-    val builder = new StringBuilder
-
-    def simpleString: PartialFunction[Node, String] = {
-      case product: Node with Product =>
-        val children = product.children.toSet[Any]
-        val args = product.productIterator.toList.filterNot {
-          case l: Iterable[_] => l.toSet.subsetOf(children)
-          case e if children.contains(e) => true
-          case dataType: Type => true
-          case _ => false
-        }
-        val argString = if (args.length > 0) args.mkString("(", ", ", ")") else ""
-        s"${product.getClass.getSimpleName}[${product.dataType}]$argString"
-      case other => s"$other"
-    }
-
-    def buildTreeString(node: Node, depth: Int): Unit = {
-      (0 until depth).foreach(_ => builder.append("  "))
-      builder.append(simpleString(node))
-      builder.append("\n")
-      node.children.foreach(buildTreeString(_, depth + 1))
-    }
-
-    buildTreeString(node, 0)
-    builder.toString()
-  }
-
-  // This class tries to do optimization like constant folding. Constant folding can be used to
-  // remove unnecessary execution branch in If-jump instructions.
-  object DSL {
-    def plus(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a + b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a + b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a + b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a + b)
-        case _ => Arithmetic("+", left, right, left.dataType)
-      }
-    }
-
-    def minus(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a - b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a - b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a - b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a - b)
-        case _ => Arithmetic("-", left, right, left.dataType)
-      }
-    }
-
-    def mul(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a * b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a * b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a * b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a * b)
-        case _ => Arithmetic("*", left, right, left.dataType)
-      }
-    }
-
-    def div(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a / b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a / b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a / b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a / b)
-        case _ => Arithmetic("/", left, right, left.dataType)
-      }
-    }
-
-    def rem(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a % b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a % b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a % b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a % b)
-        case _ => Arithmetic("%", left, right, left.dataType)
-      }
-    }
-
-    def bitwiseAnd(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a & b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a & b)
-        case _ => Arithmetic("&", left, right, left.dataType)
-      }
-    }
-
-    def bitwiseOr(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a | b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a | b)
-        case _ => Arithmetic("|", left, right, left.dataType)
-      }
-    }
-
-    def bitwiseXor(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a ^ b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a ^ b)
-        case _ => Arithmetic("^", left, right, left.dataType)
-      }
-    }
-
-    def compareEqual(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a), Constant(b)) => Constant(a == b)
-        case _ => Arithmetic("==", left, right, BOOLEAN_TYPE)
-      }
-    }
-
-    def compareNotEqual(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a), Constant(b)) => Constant(!(a == b))
-        case _ => Arithmetic("!=", left, right, BOOLEAN_TYPE)
-      }
-    }
-
-    def lt(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a < b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a < b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a < b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a < b)
-        case _ => Arithmetic("<", left, right, BOOLEAN_TYPE)
-      }
-    }
-
-    def gt(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a > b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a > b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a > b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a > b)
-        case _ => Arithmetic(">", left, right, BOOLEAN_TYPE)
-      }
-    }
-
-    def le(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a <= b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a <= b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a <= b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a <= b)
-        case _ => Arithmetic("<=", left, right, BOOLEAN_TYPE)
-      }
-    }
-
-    def ge(left: Node, right: Node): Node = {
-      (left, right) match {
-        case (Constant(a: Int), Constant(b: Int)) => Constant(a >= b)
-        case (Constant(a: Float), Constant(b: Float)) => Constant(a >= b)
-        case (Constant(a: Long), Constant(b: Long)) => Constant(a >= b)
-        case (Constant(a: Double), Constant(b: Double)) => Constant(a >= b)
-        case _ => Arithmetic(">=", left, right, BOOLEAN_TYPE)
-      }
-    }
-
-    def not(node: Node): Node = {
-      node match {
-        case Constant(bool: Boolean) => Constant(!bool)
-        case Arithmetic(">", left, right, _) => Arithmetic("<=", left, right, BOOLEAN_TYPE)
-        case Arithmetic("<", left, right, _) => Arithmetic(">=", left, right, BOOLEAN_TYPE)
-        case Arithmetic(">=", left, right, _) => Arithmetic("<", left, right, BOOLEAN_TYPE)
-        case Arithmetic("<=", left, right, _) => Arithmetic(">", left, right, BOOLEAN_TYPE)
-        case Arithmetic("==", left, right, _) => Arithmetic("!=", left, right, BOOLEAN_TYPE)
-        case Arithmetic("!=", left, right, _) => Arithmetic("==", left, right, BOOLEAN_TYPE)
-        case Arithmetic("!", left, _, _) => left
-        case _ => Arithmetic("!", node, Constant(false), BOOLEAN_TYPE)
-      }
-    }
-
-    def cast[T: ClassTag](node: Node): Node = {
-      DSL.cast(node, getType(classTag[T].runtimeClass))
-    }
-
-    def cast(node: Node, dataType: Type): Node = dataType match {
-      case dataType if dataType == node.dataType => node
-      case FLOAT_TYPE =>
-        node match {
-          case Constant(i: Int) => Constant(i.toFloat)
-          case Constant(double: Double) => Constant(double.toFloat)
-          case Constant(l: Long) => Constant(l.toFloat)
-          case Cast(inner, DOUBLE_TYPE) if inner.dataType == FLOAT_TYPE => inner
-          case other => Cast(other, dataType)
-        }
-      case DOUBLE_TYPE =>
-        node match {
-          case Constant(i: Int) => Constant(i.toDouble)
-          case Constant(float: Float) => Constant(float.toDouble)
-          case Constant(l: Long) => Constant(l.toDouble)
-          case other => Cast(other, dataType)
-        }
-      case LONG_TYPE =>
-        node match {
-          case Constant(i: Int) => Constant(i.toLong)
-          case Constant(float: Float) => Constant(float.toLong)
-          case Constant(double: Double) => Constant(double.toLong)
-          case other => Cast(other, dataType)
-        }
-      case INT_TYPE =>
-        node match {
-          case Constant(bool: Boolean) => if (bool) Constant(1) else Constant(0)
-          case Constant(float: Float) => Constant(float.toInt)
-          case Constant(double: Double) => Constant(double.toInt)
-          case Constant(long: Long) => Constant(long.toInt)
-          case Constant(byte: Byte) => Constant(byte.toInt)
-          case Constant(short: Short) => Constant(short.toInt)
-          case Constant(char: Char) => Constant(char.toInt)
-          case Cast(inner, LONG_TYPE) if inner.dataType == INT_TYPE => inner
-          case other => Cast(other, dataType)
-        }
-      case BYTE_TYPE =>
-        node match {
-          case Constant(i: Int) => Constant(i.toByte)
-          case Cast(inner, INT_TYPE) if inner.dataType == BYTE_TYPE => inner
-          case other => Cast(other, dataType)
-        }
-      case SHORT_TYPE =>
-        node match {
-          case Constant(i: Int) => Constant(i.toShort)
-          case Cast(inner, INT_TYPE) if inner.dataType == SHORT_TYPE => inner
-          case other => Cast(other, dataType)
-        }
-      case CHAR_TYPE =>
-        node match {
-          case Constant(i: Int) => Constant(i.toChar)
-          case Cast(inner, INT_TYPE) if inner.dataType == CHAR_TYPE => inner
-          case other => Cast(other, dataType)
-        }
-      case BOOLEAN_TYPE =>
-        node match {
-          case Constant(0) => Constant(false)
-          case Constant(1) => Constant(true)
-          case Cast(inner, INT_TYPE) if inner.dataType == BOOLEAN_TYPE => inner
-          case If(condition, left, right, _) =>
-            ifElse(condition, cast(left, dataType), cast(right, dataType))
-          case node =>
-            Cast(node, dataType)
-        }
-      case _ =>
-        Cast(node, dataType)
-    }
-
-    def ifElse(condition: Node, trueNode: => Node, falseNode: => Node): Node = condition match {
-      case Constant(true) => trueNode
-      case Constant(false) => falseNode
-      case _ =>
-        val trueStatment = trueNode
-        val falseStatement = falseNode
-        (trueStatment, falseStatement) match {
-          case (Constant(true), Constant(false)) => condition
-          case (Constant(false), Constant(true)) => not(condition)
-          case _ if trueStatment == falseStatement => trueStatment
-          case (Constant(null), right) => If(condition, Constant(null), right, right.dataType)
-          case (left, Constant(null)) => If(condition, left, Constant(null), left.dataType)
-          case (left, right) if left.dataType != right.dataType =>
-            throw new ByteCodeParserException(
-              s"If node (left = $left, right = $right) 's left branch's data type " +
-                "${left.dataType} mismatches with right branch's data type ${right.dataType}.")
-          case _ => If(condition, trueStatment, falseStatement, trueStatment.dataType)
-        }
-    }
-
-    def arg[T: ClassTag]: Argument = arg(Type.getType(classTag[T].runtimeClass))
-
-    def arg(dataType: Type): Argument = Argument(dataType)
   }
 
   private class MethodTracer(
@@ -478,7 +117,7 @@ object ByteCodeParser {
 
     private var labelIndex = 0
     private var labels = Map.empty[Label, Int]
-    private var msg = new StringBuilder
+    private val msg = new StringBuilder
 
     msg.append(
       s"""
@@ -491,7 +130,7 @@ object ByteCodeParser {
          |""".stripMargin)
 
     def trace(stack: List[Node], instruction: AbstractInsnNode): Unit = {
-      val stackString = if (stack.length != 0) s"stack: ${stack.mkString(",")}\n" else ""
+      val stackString = if (stack.nonEmpty) s"stack: ${stack.mkString(",")}\n" else ""
       msg.append(s"$stackString${instructionString(instruction)}\n")
     }
 
@@ -545,28 +184,27 @@ object ByteCodeParser {
  *
  */
 class ByteCodeParser {
-  import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser._
-  import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser.DSL._
 
-  def parse(closure: Class[_], argumentType: Class[_]): Node = {
+  import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser._
+
+  /**
+   * Parses the closure and generate a Node tree to represent the computation of the closure.
+   *
+   * @param closure closure of single input argument and single return value
+   * @param argumentClass input argument class of closure
+   * @return root Node of the Node tree.
+   * @throws ByteCodeParserException
+   */
+  def parse(closure: Class[_], argumentClass: Class[_]): Node = {
     // The Scala closure use apply as method name, sometimes it has a suffix, like apply$mcI$sp
     // The Java closure we use like MapFunction use call as method name.
     // The pattern match here make sure we only parse the Scala closure method or Java closure
     // method. Other methods are ignored.
     val defaultNamePattern = "call|apply(\\$mc.*\\$sp)?"
-    parse(closure, argumentType, defaultNamePattern)
+    parse(closure, argumentClass, defaultNamePattern)
   }
 
-  /**
-   * Parses the closure and generate a Node tree to represent the computation of the closure.
-   *
-   * @param closure input closure (single input argument, and single return value)
-   * @param methodNamePattern regular expression pattern for the closure method
-   * @tparam T the argument type of input closure
-   * @return root Node of the Node tree.
-   * @throws ByteCodeParserException
-   */
-  def parse(closure: Class[_], argumentType: Class[_], methodNamePattern: String): Node = {
+  private def parse(closure: Class[_], argumentClass: Class[_], methodNamePattern: String): Node = {
     // Scala compiler may automatically generates multiple apply methods with different argument
     // type, like apply(obj: Object), apply(v: Int), apply$mcI$sp(v: Int). Some apply method
     // may delegates call to another apply method. Here we tries to gather as more candidate apply
@@ -583,7 +221,7 @@ class ByteCodeParser {
         signature: String,
         exceptions: Array[String])
       : MethodVisitor = {
-        if (isApplyMethod(argumentType, name, desc)) {
+        if (isApplyMethod(argumentClass, name, desc)) {
           val method = new MethodNode(access, name, desc, signature, exceptions)
           candidateMethods = method :: candidateMethods
           method
@@ -603,7 +241,6 @@ class ByteCodeParser {
           name: String,
           signature: String): Boolean = {
         val argumentTypes = Type.getArgumentTypes(signature)
-        val returnType = getReturnType(signature)
 
         argumentTypes.length == 1 &&
           argumentTypes(0).getClassName == argumentType.getName &&
@@ -614,10 +251,10 @@ class ByteCodeParser {
     // Disambiguation
     val applyMethods = resolve(candidateMethods)
 
-    if (applyMethods.length == 0) {
+    if (applyMethods.isEmpty) {
       // Throws error if there is no apply method or argument type mismatches expected type.
       throw new ByteCodeParserException(s"Cannot find an apply method in closure " +
-        s"${closure.getName}. The expected argument type is: ${argumentType.getName}")
+        s"${closure.getName}. The expected argument type is: ${argumentClass.getName}")
     } else if (applyMethods.length > 1) {
       // Scala compiler may generates multiple apply methods with same input argument type but
       // different return type.
@@ -651,7 +288,7 @@ class ByteCodeParser {
     candidates.filterNot(isProxyMethod(_))
   }
 
-  // Translates the applyMethod to Node tree.
+  // Translates the apply method to Node tree.
   private def analyze(closure: Class[_], applyMethod: MethodNode): Node = {
     if (applyMethod.tryCatchBlocks.size() != 0) {
       throw new ByteCodeParserException("try...catch... is not supported in ByteCodeParser")
@@ -765,7 +402,7 @@ class ByteCodeParser {
               } else {
                 // If the condition is a - b > 0, translates it to a > b
                 val condition = left match {
-                  case a@Arithmetic("-", _, _, _) if right == Constant(0) =>
+                  case a @ Arithmetic("-", _, _, _) if right == Constant(0) =>
                     comparator(a.left, a.right)
                   case _ => comparator(left, right)
                 }
@@ -915,16 +552,16 @@ class ByteCodeParser {
                 push(bitwiseXor(left, right))
               // Cast operations
               case I2L | F2L | D2L =>
-                push(cast[Long](pop))
+                push(cast[Long](pop()))
               case L2I | F2I | D2I =>
-                push(cast[Int](pop))
+                push(cast[Int](pop()))
               case I2F | L2F | D2F =>
-                push(cast[Float](pop))
+                push(cast[Float](pop()))
               case I2D | L2D | F2D =>
-                push(cast[Double](pop))
-              case I2B => push(cast[Int](cast[Byte](pop)))  // Sign-extended to an int
-              case I2S => push(cast[Int](cast[Short](pop))) // Sign-extended to an int
-              case I2C => push(cast[Int](cast[Char](pop))) // Zero-extended to an int
+                push(cast[Double](pop()))
+              case I2B => push(cast[Int](cast[Byte](pop())))  // Sign-extended to an int
+              case I2S => push(cast[Int](cast[Short](pop()))) // Sign-extended to an int
+              case I2C => push(cast[Int](cast[Char](pop()))) // Zero-extended to an int
               // long/float/double compare and jump instructions.
               case LCMP | FCMPL | FCMPG | DCMPL | DCMPG =>
                 val jump = instructions.get(index + 1).getOpcode match {
@@ -956,11 +593,9 @@ class ByteCodeParser {
                 // type.
                 //
                 // @See https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-2.html#jvms-2.11.1
-                val stackCategories = stack.toList.map(_.dataType).map { dataType =>
-                  dataType match {
-                    case LONG_TYPE | DOUBLE_TYPE => 2
-                    case _ => 1
-                  }
+                val stackCategories = stack.map(_.dataType).map {
+                  case LONG_TYPE | DOUBLE_TYPE => 2
+                  case _ => 1
                 }.slice(0, 4) // Stack operations like DUP2_X2 at max use 4 stack slots.
 
                 // @See https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html to find
@@ -1040,12 +675,12 @@ class ByteCodeParser {
                     push(third)
                     push(second)
                     push(first)
-                  case (op, _) =>
-                    throw new UnsupportedOpcodeException(op, s"Stack's data type categories " +
+                  case (opcode, _) =>
+                    throw new UnsupportedOpcodeException(opcode, s"Stack's data type categories " +
                       s"(${stackCategories}) don't match the opcode's requirements.")
                 }
               case DRETURN | FRETURN | IRETURN | LRETURN | ARETURN =>
-                result = Some(pop())
+                result = Some(pop())@
               case RETURN =>
                 result = Some(VOID)
               case _ => throw new UnsupportedOpcodeException(opcode)

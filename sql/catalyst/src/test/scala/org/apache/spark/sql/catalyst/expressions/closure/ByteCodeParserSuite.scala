@@ -32,8 +32,9 @@ import org.apache.xbean.asm5.Type._
 import org.apache.xbean.asm5.tree.{ClassNode, InsnNode, LdcInsnNode, MethodNode}
 
 import org.apache.spark.SparkFunSuite
-import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser.{opString, Argument, Cast, Constant, FunctionCall, Node, StaticField, This, UnsupportedOpcodeException}
+import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParser.{opString, UnsupportedOpcodeException}
 import org.apache.spark.sql.catalyst.expressions.closure.ByteCodeParserSuite.{A, CreateClosureWithStackClassLoader}
+import org.apache.spark.sql.catalyst.expressions.closure.DSL._
 
 class ByteCodeParserSuite extends SparkFunSuite {
 
@@ -78,11 +79,19 @@ class ByteCodeParserSuite extends SparkFunSuite {
       sum3 + d0 + d1 + ldcd // DLOAD
     }
 
-    assert(parse(closure).treeString ==
-      """If[D]((java.lang.Object.equals(addOne, null)) == 0)
-        |  Constant[D](32958.0)
-        |  Constant[D](32957.0)
-        |""".stripMargin)
+    assertEqual(
+      parse(closure),
+      ifElse(
+        compareEqual(
+          FunctionCall(
+            obj = Constant("addOne"),
+            className = "java.lang.Object",
+            method = "equals",
+            arguments = List(Constant(null)),
+            dataType = BOOLEAN_TYPE),
+          Constant(0)),
+        Constant(32958.0D),
+        Constant(32957.0D)))
 
     // "LDC x" is unsupported if x is a class reference...
     val ldc_reference = (v: Int) => {
@@ -110,53 +119,50 @@ class ByteCodeParserSuite extends SparkFunSuite {
       v.toLong.toFloat.toDouble.toInt.toDouble.toFloat.toLong.toInt.toFloat.toInt.toDouble.toLong
         .toDouble
     }
-    assert(parse(castChain).treeString ==
-      s"""Cast[D]
-         |  Cast[J]
-         |    Cast[D]
-         |      Cast[I]
-         |        Cast[F]
-         |          Cast[I]
-         |            Cast[J]
-         |              Cast[F]
-         |                Cast[D]
-         |                  Cast[I]
-         |                    Cast[D]
-         |                      Cast[F]
-         |                        Cast[J]
-         |                          Argument[I]
-         |""".stripMargin)
+
+    assertEqual(
+      parse(castChain),
+      cast[Double](
+        cast[Long](
+          cast[Double](
+            cast[Int](
+              cast[Float](
+                cast[Int](
+                  cast[Long](
+                    cast[Float](
+                      cast[Double](
+                        cast[Int](
+                          cast[Double](
+                            cast[Float](
+                              cast[Long](
+                                arg[Int]))))))))))))))
 
     // The result of I2S is an int, not a short.
     val castShort = (v: Int) => v.toShort + v
-    assert(parse(castShort).treeString ==
-      s"""Arithmetic[I](+)
-         |  Cast[I]
-         |    Cast[S]
-         |      Argument[I]
-         |  Argument[I]
-         |""".stripMargin)
+    assertEqual(
+      parse(castShort),
+      plus(
+        cast[Int](
+          cast[Short](arg[Int])),
+        arg[Int]))
 
     // The result of I2B is an int, not a byte.
     val castByte = (v: Int) => v.toByte + v
-    assert(parse(castByte).treeString ==
-      s"""Arithmetic[I](+)
-          |  Cast[I]
-          |    Cast[B]
-          |      Argument[I]
-          |  Argument[I]
-          |""".stripMargin)
+    assertEqual(
+      parse(castByte),
+      plus(
+        cast[Int](
+          cast[Byte](arg[Int])),
+        arg[Int]))
 
     // The result of I2C is an int, not a char.
     val castChar = (v: Int) => v.toChar + v
-    assert(parse(castChar).treeString ==
-      s"""Arithmetic[I](+)
-          |  Cast[I]
-          |    Cast[C]
-          |      Argument[I]
-          |  Argument[I]
-          |""".stripMargin)
-
+    assertEqual(
+      parse(castChar),
+      plus(
+        cast[Int](
+          cast[Char](arg[Int])),
+        arg[Int]))
 
     // Tests constant folding.
     val constantFolding = (v: Int) => {
@@ -181,53 +187,31 @@ class ByteCodeParserSuite extends SparkFunSuite {
     val castIfToBoolean = (v: Int) => {
       v > 0
     }
-
-    assert(parse(castIfToBoolean).treeString ==
-      s"""Arithmetic[Z](>)
-         |  Argument[I]
-         |  Constant[I](0)
-         |""".stripMargin)
+    assertEqual(parse(castIfToBoolean), gt(arg[Int], Constant(0)))
 
     // Eliminates the outer duplicate cast Cast[Int](Cast[Int](node))
     val castTwice = (v: Long) => v.toInt.toInt
-    assert(parse(castTwice).treeString ==
-      s"""Cast[I]
-         |  Argument[J]
-         |""".stripMargin)
+    assertEqual(parse(castTwice), cast[Int](arg[Long]))
 
     // Eliminates the outer unnecessary casts Cast[Byte](Cast[Int](Cast[Byte](node)))
     val castByteIntByte = (v: Int) => v.toByte.toInt.toByte
-    assert(parse(castByteIntByte).treeString ==
-      s"""Cast[B]
-          |  Argument[I]
-          |""".stripMargin)
+    assertEqual(parse(castByteIntByte), cast[Byte](arg[Int]))
+
     val castShortIntShort = (v: Int) => v.toShort.toInt.toShort
-    assert(parse(castShortIntShort).treeString ==
-      s"""Cast[S]
-          |  Argument[I]
-          |""".stripMargin)
+    assertEqual(parse(castShortIntShort), cast[Short](arg[Int]))
+
     val castCharIntChar = (v: Int) => v.toChar.toInt.toChar
-    assert(parse(castCharIntChar).treeString ==
-      s"""Cast[C]
-          |  Argument[I]
-          |""".stripMargin)
+    assertEqual(parse(castCharIntChar), cast[Char](arg[Int]))
+
     val castIntLongInt = (v: Long) => v.toInt.toLong.toInt
-    assert(parse(castIntLongInt).treeString ==
-      s"""Cast[I]
-          |  Argument[J]
-          |""".stripMargin)
+    assertEqual(parse(castIntLongInt), cast[Int](arg[Long]))
+
     val castFloatDoubleFloat = (v: Double) => v.toFloat.toDouble.toFloat
-    assert(parse(castFloatDoubleFloat).treeString ==
-      s"""Cast[F]
-          |  Argument[D]
-          |""".stripMargin)
+    assertEqual(parse(castFloatDoubleFloat), cast[Float](arg[Double]))
 
     // Tests CHECKCAST
     val checkCast = (v: AnyRef) => v.asInstanceOf[Integer]
-    assert(parse(checkCast).treeString ==
-      s"""Cast[Ljava/lang/Integer;]
-         |  Argument[Ljava/lang/Object;]
-         |""".stripMargin)
+    assertEqual(parse(checkCast), cast[java.lang.Integer](arg[java.lang.Object]))
   }
 
   test("function call instructions") {
@@ -235,7 +219,7 @@ class ByteCodeParserSuite extends SparkFunSuite {
       private def privateMethod(a: Double): Double = a
       def publicMethod(a: Double): Double = a
       def apply(v: A): Double = {
-          Math.sqrt(publicMethod(privateMethod(v.get)))
+        Math.sqrt(publicMethod(privateMethod(v.get)))
       }
     }
     assert(parse(func) match {
@@ -284,78 +268,71 @@ class ByteCodeParserSuite extends SparkFunSuite {
     assert(parse(returnShort) == Cast(Argument(Type.INT_TYPE), Type.SHORT_TYPE))
     assert(parse(returnChar) == Cast(Argument(Type.INT_TYPE), Type.CHAR_TYPE))
     assert(parse(returnObject) == Argument(Type.getType(classOf[java.lang.Object])))
-    assert(parse(returnVoid) == ByteCodeParser.VOID)
+    assert(parse(returnVoid) == VOID)
     assert(parse(returnUnit) == StaticField("scala.Unit$", "MODULE$", getType(scala.Unit.getClass)))
   }
 
   test("arithmetic operation instructions, +, -, *, /, %, NEG, INC") {
     val intOperation = (v: Int) => (((-v + 3) - 4) * 7 / 2) % 5
-    assert(parse(intOperation).treeString ==
-      s"""Arithmetic[I](%)
-         |  Arithmetic[I](/)
-         |    Arithmetic[I](*)
-         |      Arithmetic[I](-)
-         |        Arithmetic[I](+)
-         |          Arithmetic[I](-)
-         |            Constant[I](0)
-         |            Argument[I]
-         |          Constant[I](3)
-         |        Constant[I](4)
-         |      Constant[I](7)
-         |    Constant[I](2)
-         |  Constant[I](5)
-         |""".stripMargin)
+    assertEqual(
+      parse(intOperation),
+      rem(
+        div(
+          mul(
+            minus(
+              plus(
+                minus(Constant(0), arg[Int]),
+                Constant(3)),
+              Constant(4)),
+            Constant(7)),
+          Constant(2)),
+        Constant(5)))
 
     val longOperation = (v: Long) => (((-v + 3L) - 4L) * 7L / 2L) % 5L
-    assert(parse(longOperation).treeString ==
-      s"""Arithmetic[J](%)
-          |  Arithmetic[J](/)
-          |    Arithmetic[J](*)
-          |      Arithmetic[J](-)
-          |        Arithmetic[J](+)
-          |          Arithmetic[J](-)
-          |            Constant[J](0)
-          |            Argument[J]
-          |          Constant[J](3)
-          |        Constant[J](4)
-          |      Constant[J](7)
-          |    Constant[J](2)
-          |  Constant[J](5)
-          |""".stripMargin)
+    assertEqual(
+      parse(longOperation),
+      rem(
+        div(
+          mul(
+            minus(
+              plus(
+                minus(Constant(0L), arg[Long]),
+                Constant(3L)),
+              Constant(4L)),
+            Constant(7L)),
+          Constant(2L)),
+        Constant(5L)))
+
 
     val floatOperation = (v: Float) => (((-v + 3F) - 4F) * 7F / 2F) % 5F
-    assert(parse(floatOperation).treeString ==
-      s"""Arithmetic[F](%)
-          |  Arithmetic[F](/)
-          |    Arithmetic[F](*)
-          |      Arithmetic[F](-)
-          |        Arithmetic[F](+)
-          |          Arithmetic[F](-)
-          |            Constant[F](0.0)
-          |            Argument[F]
-          |          Constant[F](3.0)
-          |        Constant[F](4.0)
-          |      Constant[F](7.0)
-          |    Constant[F](2.0)
-          |  Constant[F](5.0)
-          |""".stripMargin)
+    assertEqual(
+      parse(floatOperation),
+      rem(
+        div(
+          mul(
+            minus(
+              plus(
+                minus(Constant(0.0F), arg[Float]),
+                Constant(3.0F)),
+              Constant(4.0f)),
+            Constant(7.0F)),
+          Constant(2.0F)),
+      Constant(5.0F)))
 
     val doubleOperation = (v: Double) => (((-v + 3D) - 4D) * 7D / 2D) % 5D
-    assert(parse(doubleOperation).treeString ==
-      s"""Arithmetic[D](%)
-          |  Arithmetic[D](/)
-          |    Arithmetic[D](*)
-          |      Arithmetic[D](-)
-          |        Arithmetic[D](+)
-          |          Arithmetic[D](-)
-          |            Constant[D](0.0)
-          |            Argument[D]
-          |          Constant[D](3.0)
-          |        Constant[D](4.0)
-          |      Constant[D](7.0)
-          |    Constant[D](2.0)
-          |  Constant[D](5.0)
-          |""".stripMargin)
+    assertEqual(
+      parse(doubleOperation),
+      rem(
+        div(
+          mul(
+            minus(
+              plus(
+                minus(Constant(0.0D), arg[Double]),
+                Constant(3.0D)),
+              Constant(4.0D)),
+            Constant(7.0D)),
+          Constant(2.0D)),
+        Constant(5.0D)))
 
     logTrace(parse(new IincTestClosure, classOf[Int]).treeString)
   }
@@ -363,149 +340,144 @@ class ByteCodeParserSuite extends SparkFunSuite {
   test("bitwise operation instructions, &, |, ^") {
     val intOperation = (v: Int) => ((v & 3) | 4) ^ 5
     val longOperation = (v: Long) => ((v & 3L) | 4L) ^ 5L
-    assert(parse(intOperation).toString == "((Argument & 3) | 4) ^ 5")
-    assert(parse(longOperation).toString == "((Argument & 3) | 4) ^ 5")
+    assertEqual(
+      parse(intOperation),
+      bitwiseXor(
+        bitwiseOr(
+          bitwiseAnd(arg[Int], Constant(3)),
+          Constant(4)),
+        Constant(5)))
+
+    assertEqual(
+      parse(longOperation),
+      bitwiseXor(
+        bitwiseOr(
+          bitwiseAnd(arg[Long], Constant(3L)),
+          Constant(4L)),
+        Constant(5L)))
   }
 
   test("compare and jump instructions") {
     // int compare, ==
     val intEqual = (v: Int) => v == 0 // IF_ICMPNE
-    assert(parse(intEqual).treeString ==
-      s"""Arithmetic[Z](==)
-         |  Argument[I]
-         |  Constant[I](0)
-         |""".stripMargin)
+    assertEqual(parse(intEqual), compareEqual(arg[Int], Constant(0)))
 
     // int compare, !=
     val intNotEqual = (v: Int) => v != 0 // // IF_ICMPEQ
-    assert(parse(intNotEqual).treeString ==
-      s"""Arithmetic[Z](!=)
-          |  Argument[I]
-          |  Constant[I](0)
-          |""".stripMargin)
+    assertEqual(parse(intNotEqual), compareNotEqual(arg[Int], Constant(0)))
 
     // int compare, <=
     val intLessThanOrEqualsTo = (v: Int) => v <= 3  // IF_ICMPGT
-    assert(parse(intLessThanOrEqualsTo).treeString ==
-      s"""Arithmetic[Z](<=)
-         |  Argument[I]
-         |  Constant[I](3)
-         |""".stripMargin)
+    assertEqual(parse(intLessThanOrEqualsTo), le(arg[Int], Constant(3)))
+
 
     // int compare, >=
     val intGreaterThanOrEqualsTo = (v: Int) => v >= 3  // IF_ICMPLT
-    assert(parse(intGreaterThanOrEqualsTo).treeString ==
-      s"""Arithmetic[Z](>=)
-          |  Argument[I]
-          |  Constant[I](3)
-          |""".stripMargin)
+    assertEqual(parse(intGreaterThanOrEqualsTo), ge(arg[Int], Constant(3)))
 
     // int compare, <
     val intLessThan = (v: Int) => v < 3  // IF_ICMPGE
-    assert(parse(intLessThan).treeString ==
-      s"""Arithmetic[Z](<)
-          |  Argument[I]
-          |  Constant[I](3)
-          |""".stripMargin)
+    assertEqual(parse(intLessThan), lt(arg[Int], Constant(3)))
 
     // int compare, >
     val intGreaterThan = (v: Int) => v > 3  // IF_ICMPLE
-    assert(parse(intGreaterThan).treeString ==
-      s"""Arithmetic[Z](>)
-          |  Argument[I]
-          |  Constant[I](3)
-          |""".stripMargin)
+    assertEqual(parse(intGreaterThan), gt(arg[Int], Constant(3)))
 
     // reference null check
     val objectEqualsNull = (v: java.lang.Integer) => v.eq(null) // IFNONNULL
-    assert(parse(objectEqualsNull).toString == "Argument == null")
+    assertEqual(
+      parse(objectEqualsNull),
+      compareEqual(arg[java.lang.Integer], Constant(null)))
 
     // reference equality check
     val objectEquals = (v: java.lang.Integer) => v.eq(v) // IF_ACMPNE
-    assert(parse(objectEquals).toString == "Argument == Argument")
+    assertEqual(
+      parse(objectEquals),
+      compareEqual(arg[java.lang.Integer], arg[java.lang.Integer]))
 
     // long compare, >
     val longCompareGreaterThan = (v: Long) => v > 3L  // LCMP, IFLE
-    assert(parse(longCompareGreaterThan).toString == "Argument > 3")
+    assertEqual(parse(longCompareGreaterThan), gt(arg[Long], Constant(3L)))
 
     // long compare, <
     val longCompareLessThan = (v: Long) => v < 3L  // LCMP, IFGE
-    assert(parse(longCompareLessThan).toString == "Argument < 3")
+    assertEqual(parse(longCompareLessThan), lt(arg[Long], Constant(3L)))
 
     // long compare, <=
     val longCompareLessThanOrEqualsTo = (v: Long) => v <= 3L  // LCMP, IFGT
-    assert(parse(longCompareLessThanOrEqualsTo).toString == "Argument <= 3")
+    assertEqual(parse(longCompareLessThanOrEqualsTo), le(arg[Long], Constant(3L)))
 
     // long compare, >=
     val longCompareGreaterThanOrEqualsTo = (v: Long) => v >= 3L  // LCMP, IFLT
-    assert(parse(longCompareGreaterThanOrEqualsTo).toString == "Argument >= 3")
+    assertEqual(parse(longCompareGreaterThanOrEqualsTo), ge(arg[Long], Constant(3L)))
 
     // long compare, ==
     val longCompareEquals = (v: Long) => v == 3L  // LCMP, IFNE
-    assert(parse(longCompareEquals).toString == "Argument == 3")
+    assertEqual(parse(longCompareEquals), compareEqual(arg[Long], Constant(3L)))
 
     // long compare, !=
     val longCompareNotEquals = (v: Long) => v != 3L  // LCMP, IFEQ
-    assert(parse(longCompareNotEquals).toString == "Argument != 3")
+    assertEqual(parse(longCompareNotEquals), compareNotEqual(arg[Long], Constant(3L)))
 
     // float compare, >
     val floatCompareGreaterThan = (v: Float) => v > 3.0F  // FCMPL, IFLE
-    assert(parse(floatCompareGreaterThan).toString == "Argument > 3.0")
+    assertEqual(parse(floatCompareGreaterThan), gt(arg[Float], Constant(3.0F)))
 
     // float compare, <
     val floatCompareLessThan = (v: Float) => v < 3.0F  // FCMPL, IFGE
-    assert(parse(floatCompareLessThan).toString == "Argument < 3.0")
+    assertEqual(parse(floatCompareLessThan), lt(arg[Float], Constant(3.0F)))
 
     // float compare, <=
     val floatCompareLessThanOrEqualsTo = (v: Float) => v <= 3.0F  // FCMPG, IFGT
-    assert(parse(floatCompareLessThanOrEqualsTo).toString == "Argument <= 3.0")
+    assertEqual(parse(floatCompareLessThanOrEqualsTo), le(arg[Float], Constant(3.0F)))
 
     // float compare, >=
     val floatCompareGreaterThanOrEqualsTo = (v: Float) => v >= 3.0F  // FCMPL, IFLT
-    assert(parse(floatCompareGreaterThanOrEqualsTo).toString == "Argument >= 3.0")
+    assertEqual(parse(floatCompareGreaterThanOrEqualsTo), ge(arg[Float], Constant(3.0F)))
 
     // float compare, ==
     val floatCompareEquals = (v: Float) => v == 3.0F  // FCMPL
-    assert(parse(floatCompareEquals).toString == "Argument == 3.0")
+    assertEqual(parse(floatCompareEquals), compareEqual(arg[Float], Constant(3.0F)))
 
     // float compare, !=
     val floatCompareNotEquals = (v: Float) => v != 3.0F  // FCMPL
-    assert(parse(floatCompareNotEquals).toString == "Argument != 3.0")
+    assertEqual(parse(floatCompareNotEquals), compareNotEqual(arg[Float], Constant(3.0F)))
 
     // double compare, >
     val doubleCompareGreaterThan = (v: Double) => v > 3.0D  // DCMPL, IFLE
-    assert(parse(doubleCompareGreaterThan).toString == "Argument > 3.0")
+    assertEqual(parse(doubleCompareGreaterThan), gt(arg[Double], Constant(3.0D)))
 
     // double compare, <
     val doubleCompareLessThan = (v: Double) => v < 3.0D  // DCMPG, IFGE
-    assert(parse(doubleCompareLessThan).toString == "Argument < 3.0")
+    assertEqual(parse(doubleCompareLessThan), lt(arg[Double], Constant(3.0D)))
 
     // double compare, <=
     val doubleCompareLessThanOrEqualsTo = (v: Double) => v <= 3.0D  // DCMPG, IFGT
-    assert(parse(doubleCompareLessThanOrEqualsTo).toString == "Argument <= 3.0")
+    assertEqual(parse(doubleCompareLessThanOrEqualsTo), le(arg[Double], Constant(3.0D)))
 
     // double compare, >=
     val doubleCompareGreaterThanOrEqualsTo = (v: Double) => v >= 3.0D  // DCMPL, IFLT
-    assert(parse(doubleCompareGreaterThanOrEqualsTo).toString == "Argument >= 3.0")
+    assertEqual(parse(doubleCompareGreaterThanOrEqualsTo), ge(arg[Double], Constant(3.0D)))
 
     // double compare, ==
     val doubleCompareEquals = (v: Double) => v == 3.0D  // DCMPL, IFNE
-    assert(parse(doubleCompareEquals).toString == "Argument == 3.0")
+    assertEqual(parse(doubleCompareEquals), compareEqual(arg[Double], Constant(3.0D)))
 
     // double compare, !=
     val doubleCompareNotEquals = (v: Double) => v != 3.0D  // DCMPL, IFEQ
-    assert(parse(doubleCompareNotEquals).toString == "Argument != 3.0")
+    assertEqual(parse(doubleCompareNotEquals), compareNotEqual(arg[Double], Constant(3.0D)))
 
     val booleanCompare = (v: Int) => {
       val flag = v > 0
       if (flag) v else 0
     }
 
-    assert(parse(booleanCompare).treeString ==
-      s"""If[I](Argument <= 0)
-         |  Constant[I](0)
-         |  Argument[I]
-         |""".stripMargin)
+    assertEqual(
+      parse(booleanCompare),
+      ifElse(
+        le((arg[Int]), Constant(0)),
+        Constant(0),
+        arg[Int]))
 
     // TODO: Add test cases for Float NaN, Infinity
   }
@@ -515,43 +487,43 @@ class ByteCodeParserSuite extends SparkFunSuite {
   test("cast input argument type and return type for boolean/byte/short/char") {
     // Boolean Argument is casted to Int type.
     val castBoolean = (v: Boolean) => if (v) 1 else 0
-    assert(parse(castBoolean).treeString ==
-      s"""If[I](Cast(Argument,I) == 0)
-         |  Constant[I](0)
-         |  Constant[I](1)
-         |""".stripMargin)
+    assertEqual(
+      parse(castBoolean),
+      ifElse(
+        compareEqual(cast[Int](arg[Boolean]), Constant(0)),
+        Constant(0),
+        Constant(1)))
 
     val castByte = (v: Byte) => v.toLong
-    assert(parse(castByte).treeString ==
-      s"""Cast[J]
-         |  Cast[I]
-         |    Argument[B]
-         |""".stripMargin)
+    assertEqual(
+      parse(castByte),
+      cast[Long](
+        cast[Int](
+          arg[Byte])))
 
     val castShort = (v: Short) => v.toLong
-    assert(parse(castShort).treeString ==
-      s"""Cast[J]
-          |  Cast[I]
-          |    Argument[S]
-          |""".stripMargin)
+    assertEqual(
+      parse(castShort),
+      cast[Long](
+        cast[Int](
+          arg[Short])))
 
     val castChar = (v: Char) => v.toLong
-    assert(parse(castChar).treeString ==
-      s"""Cast[J]
-          |  Cast[I]
-          |    Argument[C]
-          |""".stripMargin)
+    assertEqual(
+      parse(castChar),
+      cast[Long](
+        cast[Int](
+          arg[Char])))
 
     // Optimizes Cast[Boolean](Cast[Int](node)) to node if node is Boolean type
     val castBoolean2 = (v: Boolean) => v
-    val x = parse(castBoolean2).treeString
-    assert(parse(castBoolean2).treeString == "Argument[Z]\n")
+    assertEqual(parse(castBoolean2), arg[Boolean])
     val castByte2 = (v: Byte) => v
-    assert(parse(castByte2).treeString == "Argument[B]\n")
+    assertEqual(parse(castByte2), arg[Byte])
     val castShort2 = (v: Short) => v
-    assert(parse(castShort2).treeString == "Argument[S]\n")
+    assertEqual(parse(castShort2), arg[Short])
     val castChar2 = (v: Char) => v
-    assert(parse(castChar2).treeString == "Argument[C]\n")
+    assertEqual(parse(castChar2), arg[Char])
   }
 
   import Opcodes._
@@ -621,7 +593,7 @@ class ByteCodeParserSuite extends SparkFunSuite {
     parser.parse(closure.getClass, argumentType)
   }
 
-  private def parse[T: ClassTag, R](function: Function1[T, R]): Node = {
+  private def parse[T: ClassTag, R](function: (T) => R): Node = {
     val parser = new ByteCodeParser()
     parser.parse(function.getClass, classTag[T].runtimeClass)
   }
@@ -637,13 +609,15 @@ class ByteCodeParserSuite extends SparkFunSuite {
       val nodeTree = parse(obj, classOf[Int])
       assert(
         nodeTree == Constant(obj.call(0)),
-        s"stack operation ${pops.flatMap(opString(_)).mkString(", ")} result ${nodeTree} doesn't " +
+        s"stack operation ${pops.flatMap(opString(_)).mkString(", ")} result $nodeTree doesn't " +
           s"match real function call result ${obj.call(0)}")
       nodeTree
     } finally {
       Thread.currentThread().setContextClassLoader(oldLoader)
     }
   }
+
+  private def assertEqual(a: Any, b: Any) = assert(a == b)
 }
 
 object ByteCodeParserSuite {

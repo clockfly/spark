@@ -21,3 +21,5 @@ class ClosureTranslationException(
     message: String,
     ex: Throwable = null)
   extends Exception(message, ex)
+
+class ByteCodeParserException(message: String) extends ClosureTranslationException(message, null)
