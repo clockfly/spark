@@ -66,7 +66,6 @@ object ByteCodeParser {
     extends ByteCodeParserException(
       s"Unsupported opcode ${opString(opcode).getOrElse(opcode.toString)}, $message")
 
-  // TODO: Support GETFIELD, for scala companion object constant reference...
   private val UnsupportedOpcodes = Set(
     // InvokeDynamicInsnNode
     INVOKEDYNAMIC,
@@ -190,25 +189,25 @@ class ByteCodeParser {
   /**
    * Parses the closure and generate a Node tree to represent the computation of the closure.
    *
-   * @param closure closure of single input argument and single return value
+   * @param closure closure with single input argument and single return value
    * @param argumentClass input argument class of closure
    * @return root Node of the Node tree.
    * @throws ByteCodeParserException
    */
   def parse(closure: Class[_], argumentClass: Class[_]): Node = {
-    // The Scala closure use apply as method name, sometimes it has a suffix, like apply$mcI$sp
-    // The Java closure we use like MapFunction use call as method name.
-    // The pattern match here make sure we only parse the Scala closure method or Java closure
-    // method. Other methods are ignored.
+    // This regular expression pattern tries to match all candidates closure method. Other unrelated
+    // methods will be ignored during the scan.
+    // Possible name patterns:
+    // 1. Scala closure: 'apply', 'apply$mcI$sp', 'apply$mcL$sp' ...
+    // 2. Java closure like MapFunction: 'call'
     val defaultNamePattern = "call|apply(\\$mc.*\\$sp)?"
     parse(closure, argumentClass, defaultNamePattern)
   }
 
   private def parse(closure: Class[_], argumentClass: Class[_], methodNamePattern: String): Node = {
-    // Scala compiler may automatically generates multiple apply methods with different argument
-    // type, like apply(obj: Object), apply(v: Int), apply$mcI$sp(v: Int). Some apply method
-    // may delegates call to another apply method. Here we tries to gather as more candidate apply
-    // method as possible during the scan of closure byte code. We will do disambiguation later.
+    // Scala compiler may automatically generates multiple apply methods with different signature
+    // like 'apply(obj: Object)', 'apply(v: Int)', 'apply$mcI$sp(v: Int)'.Here we tries to
+    // gather as more candidate 'apply' method as possible and do disambiguation later.
     var candidateMethods = List.empty[MethodNode]
     val closureResource = Thread.currentThread().getContextClassLoader
       .getResourceAsStream(closure.getName.replace('.', '/') + ".class")
@@ -226,16 +225,15 @@ class ByteCodeParser {
           candidateMethods = method :: candidateMethods
           method
         } else {
-          // null means MethodVisitor is not defined, thus, byte code of this method will be
-          // skipped during scan to improve performance.
+          // skip scanning the byte code of this method if it not a apply method.
           null
         }
       }
 
       // Check whether it is a valid apply method, with requirements:
-      // 1. Name matches "apply" or "apply$mc.*$sp".
-      // 2. Single argument function.
-      // 3. Argument's type matches the expected type.
+      // 1. Name matches "apply" or "apply$mc.*$sp", or "call"
+      // 2. Only has single input argument.
+      // 3. Input argument's type matches the expected type.
       private def isApplyMethod(
           argumentType: Class[_],
           name: String,
@@ -252,7 +250,7 @@ class ByteCodeParser {
     val applyMethods = resolve(candidateMethods)
 
     if (applyMethods.isEmpty) {
-      // Throws error if there is no apply method or argument type mismatches expected type.
+      // If there is no apply method or argument type mismatches expected type.
       throw new ByteCodeParserException(s"Cannot find an apply method in closure " +
         s"${closure.getName}. The expected argument type is: ${argumentClass.getName}")
     } else if (applyMethods.length > 1) {
@@ -288,7 +286,7 @@ class ByteCodeParser {
     candidates.filterNot(isProxyMethod(_))
   }
 
-  // Translates the apply method to Node tree.
+  // Translates the apply method to a Node tree.
   private def analyze(closure: Class[_], applyMethod: MethodNode): Node = {
     if (applyMethod.tryCatchBlocks.size() != 0) {
       throw new ByteCodeParserException("try...catch... is not supported in ByteCodeParser")
@@ -312,7 +310,7 @@ class ByteCodeParser {
 
     val tracer = new MethodTracer(applyMethod, trace = true)
 
-    // invoke instructions starting from startIndex
+    // Invokes instructions starting from startIndex
     def invoke(
         instructions: InsnList,
         startIndex: Int,
@@ -344,7 +342,7 @@ class ByteCodeParser {
         tracer.trace(stack, node)
 
         node match {
-          // non-static/static function call instructions
+          // Non-static/static function call instructions
           case method: MethodInsnNode =>
             method.getOpcode match {
               case INVOKEVIRTUAL | INVOKESTATIC | INVOKESPECIAL | INVOKEINTERFACE =>
@@ -360,7 +358,7 @@ class ByteCodeParser {
                 }
                 push(FunctionCall(obj, className, methodName, arguments, returnType))
             }
-          // non-static/static field access instructions.
+          // Non-static/static field access instructions.
           case field: FieldInsnNode =>
             field.getOpcode match {
               case GETSTATIC =>
@@ -369,13 +367,13 @@ class ByteCodeParser {
                 push(StaticField(className, field.name, dataType))
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
-          // instructions that has a integer as operand
+          // Instructions that has a integer as operand
           case intInstruction: IntInsnNode =>
             intInstruction.getOpcode match {
               case BIPUSH | SIPUSH => push(Constant(intInstruction.operand))
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
-          // instruction that takes a type descriptor as parameter
+          // Instruction that takes a type descriptor as parameter
           case typeInstruction: TypeInsnNode =>
             typeInstruction.getOpcode match {
               case CHECKCAST => // skip
@@ -461,7 +459,7 @@ class ByteCodeParser {
                 index = instructions.indexOf(jump.label) - 1
               case _ => throw new UnsupportedOpcodeException(opcode)
             }
-          // load constant instructions to stack
+          // Loads constant instructions to stack
           case load: LdcInsnNode =>
             val constant = load.cst
             constant match {
@@ -474,7 +472,7 @@ class ByteCodeParser {
                 throw new UnsupportedOpcodeException(load.getOpcode, s"LDC only supports type " +
                   s"Int, Float, Double, Long and String, current type is ${other.getClass.getName}")
             }
-          // load/store value from/to local variable.
+          // Loads/stores value from/to local variable.
           case localVar: VarInsnNode =>
             val index = localVar.`var`
             localVar.getOpcode match {
@@ -574,7 +572,7 @@ class ByteCodeParser {
                         s"by a jump instruction like IFEQ, IFNE, IFLT, IFGT, IFLE, IFGE")
                 }
 
-                // Rewrite the op to reuse the code for integer compare and jump.
+                // Rewrites the op to reuse the code for integer compare and jump.
                 jump.getOpcode match {
                   case IFEQ => jump.setOpcode(IF_ICMPEQ)
                   case IFNE => jump.setOpcode(IF_ICMPNE)
@@ -583,7 +581,7 @@ class ByteCodeParser {
                   case IFLE => jump.setOpcode(IF_ICMPLE)
                   case IFGE => jump.setOpcode(IF_ICMPGE)
                 }
-              // stack operations.
+              // Stack operations.
               case POP | POP2 | DUP | DUP2 | DUP_X1 | DUP_X2 | DUP2_X1 | DUP2_X2 | SWAP =>
                 // Each data type has a category, which affects the behavior of stack operations.
                 // JVM Category 2 types: Long, Double.
