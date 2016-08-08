@@ -61,8 +61,8 @@ object ByteCodeParser {
   }
 
   class UnsupportedOpcodeException(
-    opcode: Int,
-    message: String = "")
+      opcode: Int,
+      message: String = "")
     extends ByteCodeParserException(
       s"Unsupported opcode ${opString(opcode).getOrElse(opcode.toString)}, $message")
 

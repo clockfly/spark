@@ -109,11 +109,11 @@ case class If(condition: Node, left: Node, right: Node, dataType: Type) extends 
 
 // Represents function call. if it is a static function call, then obj is null.
 case class FunctionCall(
-  obj: Node,
-  className: String,
-  method: String,
-  arguments: List[Node],
-  dataType: Type)
+    obj: Node,
+    className: String,
+    method: String,
+    arguments: List[Node],
+    dataType: Type)
   extends Node {
   def children: List[Node] = obj::arguments
   override def toString: String = {
@@ -139,10 +139,11 @@ case class Cast(node: Node, dataType: Type) extends UnaryNode
  * @param right, the right operand of the operator. For operator !, the value is ignored.
  */
 case class Arithmetic(
-  operator: String,
-  left: Node,
-  right: Node,
-  dataType: Type) extends BinaryNode {
+    operator: String,
+    left: Node,
+    right: Node,
+    dataType: Type)
+  extends BinaryNode {
 
   private val validOperators =
     Set("+", "-", "*", "/", "%", "<", ">", "==", "!=", "<=", ">=", "!", "&", "|", "^")
