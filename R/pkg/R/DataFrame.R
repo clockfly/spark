@@ -218,7 +218,7 @@ setMethod("showDF",
 #' sparkR.session()
 #' path <- "path/to/file.json"
 #' df <- read.json(path)
-#' df
+#' show(df)
 #'}
 #' @note show(SparkDataFrame) since 1.4.0
 setMethod("show", "SparkDataFrame",
@@ -363,7 +363,7 @@ setMethod("colnames<-",
 #' @examples
 #'\dontrun{
 #' irisDF <- createDataFrame(iris)
-#' coltypes(irisDF)
+#' coltypes(irisDF) # get column types
 #'}
 #' @note coltypes since 1.6.0
 setMethod("coltypes",
@@ -406,7 +406,6 @@ setMethod("coltypes",
 #'
 #' Set the column types of a SparkDataFrame.
 #'
-#' @param x A SparkDataFrame
 #' @param value A character vector with the target column types for the given
 #'    SparkDataFrame. Column types can be one of integer, numeric/double, character, logical, or NA
 #'    to keep that column as-is.
@@ -419,8 +418,8 @@ setMethod("coltypes",
 #' sparkR.session()
 #' path <- "path/to/file.json"
 #' df <- read.json(path)
-#' coltypes(df) <- c("character", "integer")
-#' coltypes(df) <- c(NA, "numeric")
+#' coltypes(df) <- c("character", "integer") # set column types
+#' coltypes(df) <- c(NA, "numeric") # set column types
 #'}
 #' @note coltypes<- since 1.6.0
 setMethod("coltypes<-",
@@ -2044,14 +2043,14 @@ setMethod("rename",
 
 setClassUnion("characterOrColumn", c("character", "Column"))
 
-#' Arrange
+#' Arrange Rows by Variables
 #'
 #' Sort a SparkDataFrame by the specified column(s).
 #'
-#' @param x A SparkDataFrame to be sorted.
-#' @param col A character or Column object vector indicating the fields to sort on
-#' @param ... Additional sorting fields
-#' @param decreasing A logical argument indicating sorting order for columns when
+#' @param x a SparkDataFrame to be sorted.
+#' @param col a character or Column object indicating the fields to sort on
+#' @param ... additional sorting fields
+#' @param decreasing a logical argument indicating sorting order for columns when
 #'                   a character vector is specified for col
 #' @return A SparkDataFrame where all elements are sorted.
 #' @family SparkDataFrame functions
@@ -2116,7 +2115,6 @@ setMethod("arrange",
           })
 
 #' @rdname arrange
-#' @name orderBy
 #' @aliases orderBy,SparkDataFrame,characterOrColumn-method
 #' @export
 #' @note orderBy(SparkDataFrame, characterOrColumn) since 1.4.0
