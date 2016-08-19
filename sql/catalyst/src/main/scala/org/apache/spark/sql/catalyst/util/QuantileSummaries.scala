@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.util.QuantileSummaries.Stats
  * @param count the count of all the elements *inserted in the sampled buffer*
  *              (excluding the head buffer)
  */
-class QuantileSummaries(
+case class QuantileSummaries(
   val compressThreshold: Int,
   val relativeError: Double,
   val sampled: Array[Stats] = Array.empty,
