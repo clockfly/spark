@@ -513,7 +513,7 @@ abstract class TypedImperativeAggregate[T >: Null] extends ImperativeAggregate {
     input.get(offset, null)
   }
 
-  final override val aggBufferAttributes: Seq[AttributeReference] = {
+  final override lazy val aggBufferAttributes: Seq[AttributeReference] = {
     // Underlying storage type for the aggregation buffer object
     Seq(AttributeReference("buf", aggregationBufferType.sqlType)())
   }
