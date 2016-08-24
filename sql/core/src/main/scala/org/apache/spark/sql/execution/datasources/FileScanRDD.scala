@@ -178,8 +178,10 @@ class FileScanRDD(
       }
 
       def prepareNextFile(): Future[NextFile] = {
+        val taskContext = TaskContext.get()
         if (files.hasNext) {
           Future {
+            TaskContext.setTaskContext(taskContext)
             val nextFile = files.next()
             val nextFileIter =
               try {

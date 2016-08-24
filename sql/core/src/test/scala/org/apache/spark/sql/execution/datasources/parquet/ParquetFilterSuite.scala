@@ -563,7 +563,7 @@ class ParquetFilterSuite extends QueryTest with ParquetTest with SharedSQLContex
     }
   }
 
-  test("Fiters should be pushed down for vectorized Parquet reader at row group level") {
+  test("Filters should be pushed down for vectorized Parquet reader at row group level") {
     import testImplicits._
 
     withSQLConf(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key -> "true",
