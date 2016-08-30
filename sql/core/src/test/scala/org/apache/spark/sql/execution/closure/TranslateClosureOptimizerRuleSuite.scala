@@ -35,7 +35,7 @@ class TranslateClosureOptimizerRuleSuite extends SparkFunSuite {
 
   private def create(closureTranslation: Boolean): TranslateClosureOptimizerRule = {
     val conf = new SQLConf
-    conf.setConfString(TranslateClosureOptimizerRule.CONFIG_KEY, "true")
+    conf.setConfString(TranslateClosureOptimizerRule.CONFIG_KEY, closureTranslation.toString)
     TranslateClosureOptimizerRule(conf)
   }
 
@@ -45,7 +45,6 @@ class TranslateClosureOptimizerRuleSuite extends SparkFunSuite {
     // closureTranslation is disabled by config entry spark.sql.translateClosureToExpression
     assert(optimizer.apply(query) == query)
   }
-
 
   test("translation disabled for unsupported closure type") {
     val optimizer = create(closureTranslation = true)
@@ -109,7 +108,7 @@ object TranslateClosureOptimizerRuleSuite {
 
   case class B(a: Double)
 
-  implicit class MapLogicalPlan(plan: LogicalPlan) {
+  implicit class WithTypedMapOperation(plan: LogicalPlan) {
     def typedMap[T <: Product: Encoder, U: Encoder](func: T => U): LogicalPlan = {
       MapElements[T, U](func, plan)
     }

@@ -26,12 +26,37 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{StructType}
 
 /**
- * Facade class to translates closure in Dataset typed map and typed filter operation to
+ * Facade class to translates closure in Dataset typed map or typed filter operation to
  * Spark sql expression(s).
  */
 object ClosureTranslation extends Logging {
 
-  // Translates closure typed map like ds.map(_.a + 1)
+  /**
+   * Translates closure used in Dataset API typed map operation to Spark sql expression(s).
+   *
+   * For example:
+   *
+   * Closure:
+   * {{{
+   *   _ * 2
+   * }}}
+   *
+   * in Dataset typed map operation:
+   * {{{
+   *   val ds = (0 to 10).toDS
+   *   ds.map(_ * 2).show
+   * }}}
+   *
+   * is translated to expression:
+   * {{{
+   *   Multiply(UnresolvedAttribute("value"), Literal(2))
+   * }}}
+   *
+   * @param closure A function object of single input argument and single return value.
+   * @argumentClass The closure input argument's class. For the closure in above example, the
+   *               argument class is classOf[Int].
+   * @argumentSchema The closure input argument's schema.
+   */
   def translateMap(
       closure: AnyRef,
       argumentClass: Class[_],
@@ -55,7 +80,32 @@ object ClosureTranslation extends Logging {
     }
   }
 
-  // Translates closure typed filter like ds.map(_.a > 1)
+  /**
+   * Translates closure used in Dataset API typed filter operation to expression.
+   *
+   * For example:
+   *
+   * Closure in typed filter:
+   * {{{
+   *   _ > 5
+   * }}}
+   *
+   * in Dataset typed filter operation:
+   * {{{
+   *   val ds = (0 to 10).toDS
+   *   ds.filter(_ > 5).show
+   * }}}
+   *
+   * is translated to expression:
+   * {{{
+   *   GreaterThan(UnresolvedAttribute("value"), Literal(5))
+   * }}}
+   *
+   * @param closure A function object of single input argument and boolean return value.
+   * @argumentClass The closure input argument's class. For the closure in above example, the
+   *               argument class is classOf[Int].
+   * @argumentSchema The closure input argument's schema.
+   */
   def translateFilter(
       closure: AnyRef,
       argumentClass: Class[_],
