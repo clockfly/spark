@@ -51,7 +51,7 @@ class ObjectAggregationIterator(
 
   // The iterator created from the hash map. It is used to generate output rows when we are using
   // hash-based aggregation.
-  private[this] var aggBufferMapIterator: ju.Iterator[ju.Map.Entry[InternalRow, MutableRow]] = _
+  private[this] var aggBufferMapIterator: ju.Iterator[ju.Map.Entry[UnsafeRow, MutableRow]] = _
 
   // The sorter used for sort-based aggregation when the hash map grows too large. Defaults to null
   // since we always try hash-based aggregation first.
@@ -100,8 +100,6 @@ class ObjectAggregationIterator(
     if (sortBased) {
       // Process the current group.
       processCurrentSortedGroup()
-      // Generate output row for the current group.
-      serializeObjectAggBufferFields(sortBasedAggregationBuffer)
       val outputRow = generateOutput(currentGroupingKey, sortBasedAggregationBuffer)
       // Re-initializes buffer values for the next group.
       initAggregationBuffer(sortBasedAggregationBuffer)
@@ -118,7 +116,6 @@ class ObjectAggregationIterator(
   def outputForEmptyGroupingKeyWithoutInput(): UnsafeRow = {
     if (groupingExpressions.isEmpty) {
       val defaultAggregationBuffer = createNewAggregationBuffer()
-      serializeObjectAggBufferFields(defaultAggregationBuffer)
       generateOutput(UnsafeRow.createFromByteArray(0, 0), defaultAggregationBuffer)
     } else {
       throw new IllegalStateException(
@@ -145,13 +142,6 @@ class ObjectAggregationIterator(
     aggregateFunctions.collect { case f: ImperativeAggregate => f }.foreach(_.initialize(buffer))
   }
 
-  private def serializeObjectAggBufferFields(buffer: MutableRow): Unit = {
-    aggregateFunctions.foreach {
-      case agg: ObjectAggregateFunction => agg.serializeAggregateBuffer(buffer)
-      case _ =>
-    }
-  }
-
   // This function is used to read and process input rows. When processing input rows, it first uses
   // hash-based aggregation by putting groups and their buffers in `hashMap`. If `hashMap` grows too
   // large, it sorts the contents, spills them to disk, and creates a new map. At last, all sorted
@@ -165,9 +155,6 @@ class ObjectAggregationIterator(
         val newInput = inputRows.next()
         processRow(buffer, newInput)
       }
-
-      // Finished accumulating input rows, should serialize all aggregation buffer fields in-place.
-      serializeObjectAggBufferFields(buffer)
     } else {
       while (inputRows.hasNext) {
         val newInput = inputRows.next()
@@ -204,13 +191,6 @@ class ObjectAggregationIterator(
           externalSorter.merge(newSorter)
         }
         prepareForSortBasedAggregation()
-      } else {
-        // We're still using hash-based aggregation
-        val mapIterator = hashMap.iterator
-        while (mapIterator.hasNext) {
-          val entry = mapIterator.next()
-          serializeObjectAggBufferFields(entry.getValue)
-        }
       }
     }
   }
@@ -281,7 +261,7 @@ class ObjectAggregationIterator(
       }
     }
     // We have not seen a new group. It means that there is no new row in the input
-    // iter. The current group is the last group of the sortedKVIterator.
+    // iterator. The current group is the last group of the sortedKVIterator.
     if (!findNextPartition) {
       sortedInputHasNewGroup = false
       sortedKVIterator.close()

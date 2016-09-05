@@ -38,6 +38,15 @@ class ObjectAggregateFunctionSuite extends QueryTest with SQLTestUtils with Test
     )
   }
 
+  test("typed_count without grouping keys and empty input") {
+    val df = Seq.empty[(Integer, Int)].toDF("a", "b")
+
+    checkAnswer(
+      df.coalesce(1).select(typed_count($"a")),
+      Seq(Row(0))
+    )
+  }
+
   test("typed_count with grouping keys") {
     val df = Seq((1: Integer, 1), (null, 1), (2: Integer, 2)).toDF("a", "b")
 
@@ -158,5 +167,5 @@ class ObjectAggregateFunctionSuite extends QueryTest with SQLTestUtils with Test
   }
 
   private def typed_count(column: Column): Column =
-    Column(TypedCount(column.expr).toAggregateExpression())
+    Column(TestingTypedCount(column.expr).toAggregateExpression())
 }

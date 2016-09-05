@@ -60,7 +60,7 @@ object AggUtils {
 
     val useObjectHashAgg =
       objectHashAggEnabled && aggregateExpressions.map(_.aggregateFunction).exists {
-        case _: ObjectAggregateFunction => true
+        case _: TypedImperativeAggregate[_] => true
         case _ => false
       }
 

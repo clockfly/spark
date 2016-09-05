@@ -218,10 +218,6 @@ sealed abstract class AggregateFunction extends Expression with ImplicitCastInpu
   }
 }
 
-trait ObjectAggregateFunction {
-  def serializeAggregateBuffer(buffer: MutableRow): Unit
-}
-
 /**
  * API for aggregation functions that are expressed in terms of imperative initialize(), update(),
  * and merge() functions which operate on Row-based aggregation buffers.

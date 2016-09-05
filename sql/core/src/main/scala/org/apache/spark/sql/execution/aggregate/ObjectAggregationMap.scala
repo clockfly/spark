@@ -20,9 +20,8 @@ package org.apache.spark.sql.execution.aggregate
 import java.{util => ju}
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, MutableRow, UnsafeProjection, UnsafeRow}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateFunction, ObjectAggregateFunction}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateFunction, TypedImperativeAggregate}
 import org.apache.spark.sql.execution.UnsafeKVExternalSorter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter
@@ -34,7 +33,7 @@ import org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter
  * only used together with [[ObjectHashAggregateExec]].
  */
 class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
-  def getAggregationBufferByKey(groupingKey: InternalRow): MutableRow = {
+  def getAggregationBufferByKey(groupingKey: UnsafeRow): MutableRow = {
     var aggBuffer = hashMap.get(groupingKey)
     if (aggBuffer == null) {
       aggBuffer = makeEmptyAggregationBuffer
@@ -46,7 +45,7 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
 
   def size: Int = hashMap.size()
 
-  def iterator: ju.Iterator[ju.Map.Entry[InternalRow, MutableRow]] = {
+  def iterator: ju.Iterator[ju.Map.Entry[UnsafeRow, MutableRow]] = {
     hashMap.entrySet().iterator()
   }
 
@@ -77,12 +76,12 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
     while (mapIterator.hasNext) {
       val entry = mapIterator.next()
       aggregateFunctions.foreach {
-        case agg: ObjectAggregateFunction => agg.serializeAggregateBuffer(entry.getValue)
+        case agg: TypedImperativeAggregate[_] => agg.serializeAggregateBufferInPlace(entry.getValue)
         case _ =>
       }
 
       sorter.insertKV(
-        entry.getKey.asInstanceOf[UnsafeRow],
+        entry.getKey,
         unsafeAggBufferProjection(entry.getValue)
       )
     }
@@ -92,5 +91,5 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
     sorter
   }
 
-  private[this] val hashMap = new ju.LinkedHashMap[InternalRow, MutableRow]
+  private[this] val hashMap = new ju.LinkedHashMap[UnsafeRow, MutableRow]
 }
