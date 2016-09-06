@@ -85,7 +85,14 @@ class ObjectAggregationIterator(
   }
 
   override final def hasNext: Boolean = {
-    (sortBased && sortedInputHasNewGroup) || (!sortBased && aggBufferMapIterator.hasNext)
+    val hasRemaining =
+      (sortBased && sortedInputHasNewGroup) || (!sortBased && aggBufferMapIterator.hasNext)
+
+    if (!hasRemaining) {
+      hashMap.clear()
+    }
+
+    hasRemaining
   }
 
   override final def next(): UnsafeRow = {
@@ -188,7 +195,7 @@ class ObjectAggregationIterator(
   }
 
   private def prepareForSortBasedAggregation(): Unit = {
-    logInfo("Falling back to sort based aggregation.")
+    logInfo("Preparing for sort-based aggregation.")
 
     // Basically the value of the KVIterator returned by externalSorter
     // will be just aggregation buffer, so we rewrite the aggregateExpressions to reflect it.

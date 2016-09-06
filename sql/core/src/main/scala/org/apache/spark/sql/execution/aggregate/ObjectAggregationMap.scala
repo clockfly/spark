@@ -83,4 +83,8 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
 
     sorter
   }
+
+  def clear(): Unit = {
+    hashMap.clear()
+  }
 }
