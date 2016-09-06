@@ -55,15 +55,18 @@ object AggUtils {
       initialInputBufferOffset: Int = 0,
       resultExpressions: Seq[NamedExpression] = Nil,
       child: SparkPlan): SparkPlan = {
-    val objectHashAggEnabled = child.sqlContext.conf.getConf(SQLConf.USE_OBJECT_AGG_EXEC)
-
-    val useObjectHashAgg =
-      objectHashAggEnabled && aggregateExpressions.map(_.aggregateFunction).exists {
-        case _: TypedImperativeAggregate[_] => true
-        case _ => false
-      }
-
-    if (useObjectHashAgg) {
+    val useHash = HashAggregateExec.supportsAggregate(
+      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes))
+    if (useHash) {
+      HashAggregateExec(
+        requiredChildDistributionExpressions = requiredChildDistributionExpressions,
+        groupingExpressions = groupingExpressions,
+        aggregateExpressions = aggregateExpressions,
+        aggregateAttributes = aggregateAttributes,
+        initialInputBufferOffset = initialInputBufferOffset,
+        resultExpressions = resultExpressions,
+        child = child)
+    } else if (child.sqlContext.conf.useObjectHashAggregation) {
       ObjectHashAggregateExec(
         requiredChildDistributionExpressions = requiredChildDistributionExpressions,
         groupingExpressions = groupingExpressions,
@@ -71,30 +74,16 @@ object AggUtils {
         aggregateAttributes = aggregateAttributes,
         initialInputBufferOffset = initialInputBufferOffset,
         resultExpressions = resultExpressions,
-        child = child
-      )
+        child = child)
     } else {
-      val useHash = HashAggregateExec.supportsAggregate(
-        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes))
-      if (useHash) {
-        HashAggregateExec(
-          requiredChildDistributionExpressions = requiredChildDistributionExpressions,
-          groupingExpressions = groupingExpressions,
-          aggregateExpressions = aggregateExpressions,
-          aggregateAttributes = aggregateAttributes,
-          initialInputBufferOffset = initialInputBufferOffset,
-          resultExpressions = resultExpressions,
-          child = child)
-      } else {
-        SortAggregateExec(
-          requiredChildDistributionExpressions = requiredChildDistributionExpressions,
-          groupingExpressions = groupingExpressions,
-          aggregateExpressions = aggregateExpressions,
-          aggregateAttributes = aggregateAttributes,
-          initialInputBufferOffset = initialInputBufferOffset,
-          resultExpressions = resultExpressions,
-          child = child)
-      }
+      SortAggregateExec(
+        requiredChildDistributionExpressions = requiredChildDistributionExpressions,
+        groupingExpressions = groupingExpressions,
+        aggregateExpressions = aggregateExpressions,
+        aggregateAttributes = aggregateAttributes,
+        initialInputBufferOffset = initialInputBufferOffset,
+        resultExpressions = resultExpressions,
+        child = child)
     }
   }
 

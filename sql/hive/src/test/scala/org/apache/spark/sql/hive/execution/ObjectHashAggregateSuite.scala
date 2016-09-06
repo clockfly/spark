@@ -264,14 +264,14 @@ class ObjectHashAggregateSuite
                 var actual2: Seq[Row] = null
 
                 // Disables `ObjectHashAggregateExec` to obtain a standard answer
-                withSQLConf(SQLConf.USE_OBJECT_AGG_EXEC.key -> "false") {
+                withSQLConf(SQLConf.USE_OBJECT_HASH_AGG.key -> "false") {
                   expected = doAggregation(df).collect().toSeq
                 }
 
                 // Enables `ObjectHashAggregateExec` but disables sort-based aggregation fallback
                 // (we only generate 50 rows) to obtain a result to be checked.
                 withSQLConf(
-                  SQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
+                  SQLConf.USE_OBJECT_HASH_AGG.key -> "true",
                   SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "100"
                 ) {
                   actual1 = doAggregation(df).collect().toSeq
@@ -280,7 +280,7 @@ class ObjectHashAggregateSuite
                 // Enables `ObjectHashAggregateExec` and sort-based aggregation fallback to obtain
                 // another result to be checked.
                 withSQLConf(
-                  SQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
+                  SQLConf.USE_OBJECT_HASH_AGG.key -> "true",
                   SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "3"
                 ) {
                   actual2 = doAggregation(df).collect().toSeq

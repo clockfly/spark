@@ -542,7 +542,7 @@ object SQLConf {
       // percentile_approx).
       .createWithDefault(128)
 
-  val USE_OBJECT_AGG_EXEC = SQLConfigBuilder("spark.sql.execution.useObjectAggregateExec")
+  val USE_OBJECT_HASH_AGG = SQLConfigBuilder("spark.sql.execution.useObjectHashAggregateExec")
     .internal()
     .doc("Decides if we use ObjectHashAggregateExec")
     .booleanConf
@@ -720,6 +720,8 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
   def partitionPruning: Boolean = getConf(PARTITION_PRUNING)
 
   def vectorizedAggregateMapMaxColumns: Int = getConf(VECTORIZED_AGG_MAP_MAX_COLUMNS)
+
+  def useObjectHashAggregation: Boolean = getConf(USE_OBJECT_HASH_AGG)
 
   def objectAggSortBasedFallbackThreshold: Int = getConf(OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD)
 
