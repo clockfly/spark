@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.ExpressionInfo
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.hive.HiveSessionCatalog
 import org.apache.spark.sql.hive.test.TestHiveSingleton
-import org.apache.spark.sql.internal.{DatabricksSQLConf, SQLConf}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SQLTestUtils
 import org.apache.spark.sql.types._
 
@@ -259,14 +259,14 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
                 var actual2: Seq[Row] = null
 
                 // Disables `ObjectHashAggregateExec` to obtain a standard answer
-                withSQLConf(DatabricksSQLConf.USE_OBJECT_AGG_EXEC.key -> "false") {
+                withSQLConf(SQLConf.USE_OBJECT_AGG_EXEC.key -> "false") {
                   expected = doAggregation(df).collect().toSeq
                 }
 
                 // Enables `ObjectHashAggregateExec` but disables sort-based aggregation fallback
                 // (we only generate 50 rows) to obtain a result to be checked.
                 withSQLConf(
-                  DatabricksSQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
+                  SQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
                   SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key -> "100"
                 ) {
                   actual1 = doAggregation(df).collect().toSeq
@@ -275,7 +275,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
                 // Enables `ObjectHashAggregateExec` and sort-based aggregation fallback to obtain
                 // another result to be checked.
                 withSQLConf(
-                  DatabricksSQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
+                  SQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
                   SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key -> "3"
                 ) {
                   actual2 = doAggregation(df).collect().toSeq

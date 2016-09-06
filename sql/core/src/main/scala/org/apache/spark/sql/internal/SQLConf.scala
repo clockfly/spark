@@ -537,6 +537,12 @@ object SQLConf {
       .intConf
       .createWithDefault(1024)
 
+  val USE_OBJECT_AGG_EXEC = SQLConfigBuilder("spark.sql.execution.useObjectAggregateExec")
+    .internal()
+    .doc("Decides if we use ObjectHashAggregateExec")
+    .booleanConf
+    .createWithDefault(true)
+
   val FILE_SINK_LOG_DELETION = SQLConfigBuilder("spark.sql.streaming.fileSink.log.deletion")
     .internal()
     .doc("Whether to delete the expired log files in file stream sink.")

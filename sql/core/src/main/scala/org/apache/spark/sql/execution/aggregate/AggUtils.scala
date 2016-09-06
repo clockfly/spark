@@ -21,6 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.streaming.{StateStoreRestoreExec, StateStoreSaveExec}
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * Utility functions used by the query planner to convert our plan to new aggregation code path.
@@ -54,9 +55,7 @@ object AggUtils {
       initialInputBufferOffset: Int = 0,
       resultExpressions: Seq[NamedExpression] = Nil,
       child: SparkPlan): SparkPlan = {
-    val objectHashAggEnabled = child.sqlContext.conf.getConf(
-      org.apache.spark.sql.internal.DatabricksSQLConf.USE_OBJECT_AGG_EXEC
-    )
+    val objectHashAggEnabled = child.sqlContext.conf.getConf(SQLConf.USE_OBJECT_AGG_EXEC)
 
     val useObjectHashAgg =
       objectHashAggEnabled && aggregateExpressions.map(_.aggregateFunction).exists {
