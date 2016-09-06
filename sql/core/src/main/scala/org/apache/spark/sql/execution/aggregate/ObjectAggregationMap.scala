@@ -19,12 +19,13 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter
 
 /**
- * An aggregation map that supports using safe `InternalRow`s (i.e. `GenericInternalRow` and
- * `SpecificMutableRow` as grouping keys and aggregation buffers, so that we can support storing
- * arbitrary Java objects as aggregate function states in the aggregation buffers. This class is
- * only used together with [[ObjectHashAggregateExec]].
+ * An aggregation map that supports using safe `MutableRow`s aggregation buffers, so that we can
+ * support storing arbitrary Java objects as aggregate function states in the aggregation buffers.
+ * This class is only used together with [[ObjectHashAggregateExec]].
  */
 class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
+  private[this] val hashMap = new ju.LinkedHashMap[UnsafeRow, MutableRow]
+
   def getAggregationBufferByKey(groupingKey: UnsafeRow): MutableRow = {
     var aggBuffer = hashMap.get(groupingKey)
     if (aggBuffer == null) {
@@ -82,6 +83,4 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
 
     sorter
   }
-
-  private[this] val hashMap = new ju.LinkedHashMap[UnsafeRow, MutableRow]
 }
