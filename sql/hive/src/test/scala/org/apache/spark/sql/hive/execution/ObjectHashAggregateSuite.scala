@@ -19,6 +19,7 @@ import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedFunction
 import org.apache.spark.sql.catalyst.expressions.{ExpressionEvalHelper, ExpressionInfo, Literal}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
+import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.hive.HiveSessionCatalog
 import org.apache.spark.sql.hive.test.TestHiveSingleton
@@ -203,9 +204,9 @@ class ObjectHashAggregateSuite
 
     val allAggs = Seq(
       "typed" -> typed,
-      "w/o partial" -> withoutPartial,
-      "w/ partial" -> withPartial,
-      "w/ distinct" -> withDistinct
+      "without partial" -> withoutPartial,
+      "with partial" -> withPartial,
+      "with distinct" -> withDistinct
     )
 
     // The schema for the randomized data generator
@@ -256,8 +257,8 @@ class ObjectHashAggregateSuite
               test(
                 s"randomized aggregation test - " +
                   s"${names.mkString("[", ", ", "]")} - " +
-                  s"${if (withGroupingKeys) "w/" else "w/o"} grouping keys - " +
-                  s"w/ ${if (emptyInput) "empty" else "non-empty"} input"
+                  s"${if (withGroupingKeys) "with" else "without"} grouping keys - " +
+                  s"with ${if (emptyInput) "empty" else "non-empty"} input"
               ) {
                 var expected: Seq[Row] = null
                 var actual1: Seq[Row] = null
@@ -265,25 +266,49 @@ class ObjectHashAggregateSuite
 
                 // Disables `ObjectHashAggregateExec` to obtain a standard answer
                 withSQLConf(SQLConf.USE_OBJECT_HASH_AGG.key -> "false") {
-                  expected = doAggregation(df).collect().toSeq
+                  val aggDf = doAggregation(df)
+
+                  if (aggs.contains(withoutPartial) || aggs.contains(typed)) {
+                    assert(containsSortAggregateExec(aggDf))
+                    assert(!containsObjectHashAggregateExec(aggDf))
+                    assert(!containsHashAggregateExec(aggDf))
+                  } else {
+                    assert(!containsSortAggregateExec(aggDf))
+                    assert(!containsObjectHashAggregateExec(aggDf))
+                    assert(containsHashAggregateExec(aggDf))
+                  }
+
+                  expected = aggDf.collect().toSeq
                 }
 
-                // Enables `ObjectHashAggregateExec` but disables sort-based aggregation fallback
-                // (we only generate 50 rows) to obtain a result to be checked.
-                withSQLConf(
-                  SQLConf.USE_OBJECT_HASH_AGG.key -> "true",
-                  SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "100"
-                ) {
-                  actual1 = doAggregation(df).collect().toSeq
-                }
+                // Enables `ObjectHashAggregateExec`
+                withSQLConf(SQLConf.USE_OBJECT_HASH_AGG.key -> "true") {
+                  val aggDf = doAggregation(df)
 
-                // Enables `ObjectHashAggregateExec` and sort-based aggregation fallback to obtain
-                // another result to be checked.
-                withSQLConf(
-                  SQLConf.USE_OBJECT_HASH_AGG.key -> "true",
-                  SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "3"
-                ) {
-                  actual2 = doAggregation(df).collect().toSeq
+                  if (aggs.contains(withoutPartial)) {
+                    assert(containsSortAggregateExec(aggDf))
+                    assert(!containsObjectHashAggregateExec(aggDf))
+                    assert(!containsHashAggregateExec(aggDf))
+                  } else if (aggs.contains(typed)) {
+                    assert(!containsSortAggregateExec(aggDf))
+                    assert(containsObjectHashAggregateExec(aggDf))
+                    assert(!containsHashAggregateExec(aggDf))
+                  } else {
+                    assert(!containsSortAggregateExec(aggDf))
+                    assert(!containsObjectHashAggregateExec(aggDf))
+                    assert(containsHashAggregateExec(aggDf))
+                  }
+
+                  // Disables sort-based aggregation fallback (we only generate 50 rows, so 100 is
+                  // big enough) to obtain a result to be checked.
+                  withSQLConf(SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "100") {
+                    actual1 = aggDf.collect().toSeq
+                  }
+
+                  // Enables sort-based aggregation fallback to obtain another result to be checked.
+                  withSQLConf(SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "3") {
+                    actual2 = aggDf.collect().toSeq
+                  }
                 }
 
                 doubleSafeCheckRows(actual1, expected, 1e-4)
@@ -294,6 +319,24 @@ class ObjectHashAggregateSuite
         }
       }
     }
+  }
+
+  private def containsSortAggregateExec(df: DataFrame): Boolean = {
+    df.queryExecution.executedPlan.collectFirst {
+      case _: SortAggregateExec => ()
+    }.nonEmpty
+  }
+
+  private def containsObjectHashAggregateExec(df: DataFrame): Boolean = {
+    df.queryExecution.executedPlan.collectFirst {
+      case _: ObjectHashAggregateExec => ()
+    }.nonEmpty
+  }
+
+  private def containsHashAggregateExec(df: DataFrame): Boolean = {
+    df.queryExecution.executedPlan.collectFirst {
+      case _: HashAggregateExec => ()
+    }.nonEmpty
   }
 
   private def doubleSafeCheckRows(actual: Seq[Row], expected: Seq[Row], tolerance: Double): Unit = {
