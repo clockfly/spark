@@ -12,11 +12,13 @@ package org.apache.spark.sql.hive.execution
 import scala.util.Random
 
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFMax
+import org.scalatest.Matchers._
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedFunction
-import org.apache.spark.sql.catalyst.expressions.ExpressionInfo
+import org.apache.spark.sql.catalyst.expressions.{ExpressionEvalHelper, ExpressionInfo, Literal}
+import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.hive.HiveSessionCatalog
 import org.apache.spark.sql.hive.test.TestHiveSingleton
@@ -24,7 +26,12 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SQLTestUtils
 import org.apache.spark.sql.types._
 
-class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHiveSingleton {
+class ObjectHashAggregateSuite
+  extends QueryTest
+  with SQLTestUtils
+  with TestHiveSingleton
+  with ExpressionEvalHelper {
+
   import testImplicits._
 
   test("typed_count without grouping keys") {
@@ -145,6 +152,12 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
     }
   }
 
+  private def percentile_approx(
+      column: Column, percentage: Double, isDistinct: Boolean = false): Column = {
+    val approxPercentile = new ApproximatePercentile(column.expr, Literal(percentage))
+    Column(approxPercentile.toAggregateExpression(isDistinct))
+  }
+
   private def typed_count(column: Column): Column =
     Column(TestingTypedCount(column.expr).toAggregateExpression())
 
@@ -174,7 +187,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
 
   private def makeRandomizedTests(): Unit = {
     // A TypedImperativeAggregate function
-    val typed = typed_count($"c0")
+    val typed = percentile_approx($"c0", 0.5)
 
     // A Hive UDAF without partial aggregation support
     val withoutPartial = {
@@ -197,7 +210,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
 
     // The schema for the randomized data generator
     val schema = new StructType()
-      .add("c0", ByteType, nullable = true)
+      .add("c0", DoubleType, nullable = true)
       .add("c1", ShortType, nullable = true)
       .add("c2", IntegerType, nullable = true)
       .add("c3", LongType, nullable = true)
@@ -273,12 +286,23 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
                   actual2 = doAggregation(df).collect().toSeq
                 }
 
-                assertResult(expected) { actual1 }
-                assertResult(expected) { actual2 }
+                doubleSafeCheckRows(actual1, expected, 1e-4)
+                doubleSafeCheckRows(actual2, expected, 1e-4)
               }
             }
           }
         }
+      }
+    }
+  }
+
+  private def doubleSafeCheckRows(actual: Seq[Row], expected: Seq[Row], tolerance: Double): Unit = {
+    assert(actual.length == expected.length)
+    actual.zip(expected).foreach { case (lhs: Row, rhs: Row) =>
+      assert(lhs.length == rhs.length)
+      lhs.toSeq.zip(rhs.toSeq).foreach {
+        case (a: Double, b: Double) => checkResult(a, b +- tolerance)
+        case (a, b) => checkResult(a, b)
       }
     }
   }
@@ -292,9 +316,5 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
 
   private def function(name: String, args: Column*): Column = {
     Column(UnresolvedFunction(FunctionIdentifier(name), args.map(_.expr), isDistinct = false))
-  }
-
-  private def distinctFunction(name: String, args: Column*): Column = {
-    Column(UnresolvedFunction(FunctionIdentifier(name), args.map(_.expr), isDistinct = true))
   }
 }
