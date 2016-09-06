@@ -530,12 +530,17 @@ object SQLConf {
       .intConf
       .createWithDefault(3)
 
-  val OBJECT_AGG_FALLBACK_COUNT_THRESHOLD =
-    SQLConfigBuilder("spark.sql.objectHashAggregate.fallbackCountThreshold")
+  val OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD =
+    SQLConfigBuilder("spark.sql.objectHashAggregate.sortBased.fallbackThreshold")
       .internal()
-      .doc("")
+      .doc("In the case of ObjectHashAggregateExec, when the size of the in-memory hash map " +
+        "grows too large, we will fall back to sort-based aggregation. This option sets a row " +
+        "count threshold for the size of the hash map.")
       .intConf
-      .createWithDefault(1024)
+      // We are trying to be conservative and use a relatively small default count threshold here
+      // since the state object of some TypedImperativeAggregate function can be quite large (e.g.
+      // percentile_approx).
+      .createWithDefault(128)
 
   val USE_OBJECT_AGG_EXEC = SQLConfigBuilder("spark.sql.execution.useObjectAggregateExec")
     .internal()
@@ -716,7 +721,7 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
 
   def vectorizedAggregateMapMaxColumns: Int = getConf(VECTORIZED_AGG_MAP_MAX_COLUMNS)
 
-  def objectAggregateFallbackCountThreshold: Int = getConf(OBJECT_AGG_FALLBACK_COUNT_THRESHOLD)
+  def objectAggSortBasedFallbackThreshold: Int = getConf(OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD)
 
   def variableSubstituteEnabled: Boolean = getConf(VARIABLE_SUBSTITUTE_ENABLED)
 

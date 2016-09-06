@@ -160,7 +160,7 @@ class ObjectAggregationIterator(
             s"Aggregation hash map reaches threshold capacity ($fallbackCountThreshold entries), " +
               s"spilling and falling back to sort based aggregation. " +
               s"You may change the threshold by adjust option " +
-              SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key
+              SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key
           )
 
           val sorter = hashMap.dumpToExternalSorter(groupingAttributes, aggregateFunctions)

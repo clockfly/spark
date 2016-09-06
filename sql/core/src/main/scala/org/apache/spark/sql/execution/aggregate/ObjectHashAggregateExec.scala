@@ -60,7 +60,7 @@ case class ObjectHashAggregateExec(
 
   protected override def doExecute(): RDD[InternalRow] = attachTree(this, "execute") {
     val numOutputRows = longMetric("numOutputRows")
-    val fallbackCountThreshold = sqlContext.conf.objectAggregateFallbackCountThreshold
+    val fallbackCountThreshold = sqlContext.conf.objectAggSortBasedFallbackThreshold
 
     child.execute().mapPartitions { iter =>
       val hasInput = iter.hasNext

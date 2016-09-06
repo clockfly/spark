@@ -57,7 +57,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
   }
 
   test("typed_count fallback to sort-based aggregation") {
-    withSQLConf(SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key -> "2") {
+    withSQLConf(SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "2") {
       val df = Seq(
         (null, 1),
         (null, 1),
@@ -136,7 +136,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
         }
       )
 
-      withSQLConf(SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key -> "5") {
+      withSQLConf(SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "5") {
         checkAnswer(
           df.agg(aggFunctions.head, aggFunctions.tail: _*),
           Row.fromSeq(data.map(_.toSeq).transpose.map(_.count(_ != null): Long))
@@ -259,7 +259,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
                 // (we only generate 50 rows) to obtain a result to be checked.
                 withSQLConf(
                   SQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
-                  SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key -> "100"
+                  SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "100"
                 ) {
                   actual1 = doAggregation(df).collect().toSeq
                 }
@@ -268,7 +268,7 @@ class ObjectHashAggregateSuite extends QueryTest with SQLTestUtils with TestHive
                 // another result to be checked.
                 withSQLConf(
                   SQLConf.USE_OBJECT_AGG_EXEC.key -> "true",
-                  SQLConf.OBJECT_AGG_FALLBACK_COUNT_THRESHOLD.key -> "3"
+                  SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key -> "3"
                 ) {
                   actual2 = doAggregation(df).collect().toSeq
                 }
