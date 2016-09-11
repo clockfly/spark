@@ -276,6 +276,7 @@ class CodegenContext {
       case t: DecimalType => s"$row.setDecimal($ordinal, $value, ${t.precision})"
       // The UTF8String may came from UnsafeRow, otherwise clone is cheap (re-use the bytes)
       case StringType => s"$row.update($ordinal, $value.clone())"
+      case _: StructType | _: ArrayType | _: MapType => s"$row.update($ordinal, $value.copy())"
       case udt: UserDefinedType[_] => setColumn(row, udt.sqlType, ordinal, value)
       case _ => s"$row.update($ordinal, $value)"
     }
