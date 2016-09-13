@@ -196,25 +196,32 @@ class ObjectHashAggregateSuite
       function("hive_max", $"c1")
     }
 
-    // A Spark SQL native aggregate function with partial aggregation support
-    val withPartial = max($"c2")
+    // A Spark SQL native aggregate function with partial aggregation support that can be executed
+    // by the Tungsten `HashAggregateExec`
+    val withPartialUnsafe = max($"c2")
+
+    // A Spark SQL native aggregate function with partial aggregation support that can only be
+    // executed by the Tungsten `HashAggregateExec`
+    val withPartialSafe = max($"c3")
 
     // A Spark SQL native distinct aggregate function
-    val withDistinct = countDistinct($"c3")
+    val withDistinct = countDistinct($"c4")
 
     val allAggs = Seq(
       "typed" -> typed,
       "without partial" -> withoutPartial,
-      "with partial" -> withPartial,
+      "with partial + unsafe" -> withPartialUnsafe,
+      "with partial + safe" -> withPartialSafe,
       "with distinct" -> withDistinct
     )
 
     // The schema for the randomized data generator
     val schema = new StructType()
       .add("c0", DoubleType, nullable = true)
-      .add("c1", ShortType, nullable = true)
+      .add("c1", StringType, nullable = true)
       .add("c2", IntegerType, nullable = true)
-      .add("c3", LongType, nullable = true)
+      .add("c3", ArrayType(IntegerType), nullable = true)
+      .add("c4", LongType, nullable = true)
 
     // Builds a randomly generated DataFrame
     val schemaWithId = StructType(StructField("id", IntegerType, nullable = false) +: schema.fields)
@@ -268,7 +275,7 @@ class ObjectHashAggregateSuite
                 withSQLConf(SQLConf.USE_OBJECT_HASH_AGG.key -> "false") {
                   val aggDf = doAggregation(df)
 
-                  if (aggs.contains(withoutPartial) || aggs.contains(typed)) {
+                  if (aggs.intersect(Seq(withoutPartial, withPartialSafe, typed)).nonEmpty) {
                     assert(containsSortAggregateExec(aggDf))
                     assert(!containsObjectHashAggregateExec(aggDf))
                     assert(!containsHashAggregateExec(aggDf))
@@ -289,7 +296,7 @@ class ObjectHashAggregateSuite
                     assert(containsSortAggregateExec(aggDf))
                     assert(!containsObjectHashAggregateExec(aggDf))
                     assert(!containsHashAggregateExec(aggDf))
-                  } else if (aggs.contains(typed)) {
+                  } else if (aggs.contains(typed) || aggs.contains(withPartialSafe)) {
                     assert(!containsSortAggregateExec(aggDf))
                     assert(containsObjectHashAggregateExec(aggDf))
                     assert(!containsHashAggregateExec(aggDf))
