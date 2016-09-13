@@ -371,21 +371,18 @@ class ObjectHashAggregateSuite
   test("max on named_struct") {
     Seq(20 -> "val_20", 3 -> "val_3").toDF("key", "value").createOrReplaceTempView("foo")
     val df = sql("SELECT max(named_struct('key', key, 'value', value)) FROM foo")
-    df.explain(true)
     checkAnswer(df, Seq(Row(Row(20, "val_20"))))
   }
 
   test("max on map") {
     Seq(20 -> "val_20", 3 -> "val_3").toDF("key", "value").createOrReplaceTempView("foo")
     val df = sql("SELECT first(map(key, value)) FROM foo")
-    df.explain(true)
     checkAnswer(df, Seq(Row(Map(20 -> "val_20"))))
   }
 
   test("max on array") {
     Seq(20 -> "val_20", 3 -> "val_3").toDF("key", "value").createOrReplaceTempView("foo")
     val df = sql("SELECT max(array(key)) FROM foo")
-    df.explain(true)
     checkAnswer(df, Seq(Row(Array(20))))
   }
 }
