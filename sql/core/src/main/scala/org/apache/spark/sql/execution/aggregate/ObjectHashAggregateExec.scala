@@ -71,6 +71,7 @@ case class ObjectHashAggregateExec(
       } else {
         val aggregationIterator =
           new ObjectAggregationIterator(
+            child.output,
             groupingExpressions,
             aggregateExpressions,
             aggregateAttributes,

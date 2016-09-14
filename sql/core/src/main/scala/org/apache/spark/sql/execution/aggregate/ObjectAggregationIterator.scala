@@ -19,6 +19,7 @@ import org.apache.spark.sql.execution.UnsafeKVExternalSorter
 import org.apache.spark.sql.internal.SQLConf
 
 class ObjectAggregationIterator(
+    outputAttributes: Seq[Attribute],
     groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[AggregateExpression],
     aggregateAttributes: Seq[Attribute],
@@ -74,6 +75,9 @@ class ObjectAggregationIterator(
 
   // The function used to process rows in a group. Only used in sort-based aggregation.
   private[this] var sortBasedProcessRow: (MutableRow, InternalRow) => Unit = _
+
+  private[this] val safeProjection: Projection =
+    FromUnsafeProjection(outputAttributes.map(_.dataType))
 
   /**
    * Start processing input rows.
@@ -151,12 +155,12 @@ class ObjectAggregationIterator(
       val groupingKey = groupingProjection.apply(null)
       val buffer: MutableRow = hashMap.getAggregationBufferByKey(groupingKey)
       while (inputRows.hasNext) {
-        val newInput = inputRows.next()
+        val newInput = safeProjection(inputRows.next())
         processRow(buffer, newInput)
       }
     } else {
       while (inputRows.hasNext) {
-        val newInput = inputRows.next()
+        val newInput = safeProjection(inputRows.next())
         val groupingKey = groupingProjection.apply(newInput).copy()
         val buffer: MutableRow = hashMap.getAggregationBufferByKey(groupingKey)
         processRow(buffer, newInput)
