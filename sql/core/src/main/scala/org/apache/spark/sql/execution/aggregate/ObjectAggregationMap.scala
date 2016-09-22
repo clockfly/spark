@@ -38,8 +38,20 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
 
   def size: Int = hashMap.size()
 
-  def iterator: ju.Iterator[ju.Map.Entry[UnsafeRow, MutableRow]] = {
-    hashMap.entrySet().iterator()
+  def iterator: Iterator[AggregationBufferEntry] = {
+    val iter = hashMap.entrySet().iterator()
+    new Iterator[AggregationBufferEntry] {
+      val result = new AggregationBufferEntry(null, null)
+      override def hasNext: Boolean = {
+        iter.hasNext
+      }
+      override def next(): AggregationBufferEntry = {
+        val entry = iter.next()
+        result.groupingKey = entry.getKey
+        result.aggregationBuffer = entry.getValue
+        result
+      }
+    }
   }
 
   /**
@@ -69,18 +81,18 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
     while (mapIterator.hasNext) {
       val entry = mapIterator.next()
       aggregateFunctions.foreach {
-        case agg: TypedImperativeAggregate[_] => agg.serializeAggregateBufferInPlace(entry.getValue)
+        case agg: TypedImperativeAggregate[_] =>
+          agg.serializeAggregateBufferInPlace(entry.aggregationBuffer)
         case _ =>
       }
 
       sorter.insertKV(
-        entry.getKey,
-        unsafeAggBufferProjection(entry.getValue)
+        entry.groupingKey,
+        unsafeAggBufferProjection(entry.aggregationBuffer)
       )
     }
 
     hashMap.clear()
-
     sorter
   }
 
@@ -88,3 +100,6 @@ class ObjectAggregationMap(makeEmptyAggregationBuffer: => MutableRow) {
     hashMap.clear()
   }
 }
+
+// Stores the grouping key and aggregation buffer
+class AggregationBufferEntry(var groupingKey: UnsafeRow, var aggregationBuffer: MutableRow)

@@ -11,12 +11,16 @@ package org.apache.spark.sql.execution.aggregate
 
 import java.{util => ju}
 
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.expressions.codegen.{BaseOrdering, GenerateOrdering}
 import org.apache.spark.sql.execution.UnsafeKVExternalSorter
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter
 
 class ObjectAggregationIterator(
     outputAttributes: Seq[Attribute],
@@ -38,79 +42,43 @@ class ObjectAggregationIterator(
     resultExpressions,
     newMutableProjection) with Logging {
 
-  // This is the hash map used to store all groups and their corresponding aggregation buffers for
-  // hash-based aggregation.
-  private val hashMap = new ObjectAggregationMap(createNewAggregationBuffer())
+  // Indicates whether we have fall back to sort-based aggregation.
+  private[this] var sortBased: Boolean = false
 
-  // The iterator created from the hash map. It is used to generate output rows when we are using
-  // hash-based aggregation.
-  private[this] var aggBufferMapIterator: ju.Iterator[ju.Map.Entry[UnsafeRow, MutableRow]] = _
+  private[this] var aggBufferIterator: Iterator[AggregationBufferEntry] = null
 
-  // The sorter used for sort-based aggregation when the hash map grows too large. Defaults to null
-  // since we always try hash-based aggregation first.
-  private[this] var externalSorter: UnsafeKVExternalSorter = _
-
-  // Indicates if we are using sort-based aggregation.
-  private[this] def sortBased: Boolean = externalSorter != null
-
-  // The KVIterator containing input rows for the sort-based aggregation. It will be set in
-  // `switchToSortBasedAggregation()` after we switch to sort-based aggregation.
-  private[this] var sortedKVIterator: UnsafeKVExternalSorter#KVSorterIterator = _
-
-  // The grouping key of the current group. Only used in sort-based aggregation.
-  private[this] var currentGroupingKey: UnsafeRow = _
-
-  // The grouping key of next group. Only used in sort-based aggregation.
-  private[this] var nextGroupingKey: UnsafeRow = _
-
-  // The first row of next group. Only used in sort-based aggregation.
-  private[this] var firstRowInNextGroup: UnsafeRow = _
-
-  // Indicates if we has new group of rows from the sorted input iterator. Only used in sort-based
-  // aggregation.
-  private[this] var sortedInputHasNewGroup: Boolean = false
-
-  // The aggregation buffer used by the sort-based aggregation. Only used in sort-based aggregation.
-  private[this] val sortBasedAggregationBuffer: MutableRow = createNewAggregationBuffer()
-
-  // The function used to process rows in a group. Only used in sort-based aggregation.
-  private[this] var sortBasedProcessRow: (MutableRow, InternalRow) => Unit = _
+  private val mergeAggregationBuffer: (MutableRow, InternalRow) => Unit = {
+    // Hack the aggregation mode to call AggregateFunction.merge to merge two aggregation buffers
+    val newExpressions = aggregateExpressions.map {
+      case agg@AggregateExpression(_, Partial, _, _) =>
+        agg.copy(mode = PartialMerge)
+      case agg@AggregateExpression(_, Complete, _, _) =>
+        agg.copy(mode = Final)
+      case other => other
+    }
+    val newFunctions = initializeAggregateFunctions(newExpressions, 0)
+    val newInputAttributes = newFunctions.flatMap(_.inputAggBufferAttributes)
+    generateProcessRow(newExpressions, newFunctions, newInputAttributes)
+  }
 
   private[this] val safeProjection: Projection =
     FromUnsafeProjection(outputAttributes.map(_.dataType))
+
+  private val inputUnsafeProjection =
+    UnsafeProjection.create(StructType.fromAttributes(originalInputAttributes))
 
   /**
    * Start processing input rows.
    */
   processInputs()
 
-  if (!sortBased) {
-    aggBufferMapIterator = hashMap.iterator
-  }
-
   override final def hasNext: Boolean = {
-    val hasRemaining =
-      (sortBased && sortedInputHasNewGroup) || (!sortBased && aggBufferMapIterator.hasNext)
-
-    if (!hasRemaining) {
-      hashMap.clear()
-    }
-
-    hasRemaining
+    aggBufferIterator.hasNext
   }
 
   override final def next(): UnsafeRow = {
-    if (sortBased) {
-      // Process the current group.
-      processCurrentSortedGroup()
-      val outputRow = generateOutput(currentGroupingKey, sortBasedAggregationBuffer)
-      // Re-initializes buffer values for the next group.
-      initAggregationBuffer(sortBasedAggregationBuffer)
-      outputRow
-    } else {
-      val entry = aggBufferMapIterator.next()
-      generateOutput(entry.getKey, entry.getValue)
-    }
+    val entry = aggBufferIterator.next()
+    generateOutput(entry.groupingKey, entry.aggregationBuffer)
   }
 
   /**
@@ -150,6 +118,13 @@ class ObjectAggregationIterator(
   // large, it sorts the contents, spills them to disk, and creates a new map. At last, all sorted
   // spills are merged together for sort-based aggregation.
   private def processInputs(): Unit = {
+    // In-memory map to store aggregation buffer for hash-based aggregation.
+    val hashMap = new ObjectAggregationMap(createNewAggregationBuffer())
+
+    // If in-memory map is unable to stores all aggregation buffer, fallback to sort-based
+    // aggregation backed for sorted physical storage.
+    var sortBasedAggregationStore: SortBasedAggregationStore = null
+
     if (groupingExpressions.isEmpty) {
       // If there is no grouping expressions, we can just reuse the same buffer over and over again.
       val groupingKey = groupingProjection.apply(null)
@@ -160,114 +135,168 @@ class ObjectAggregationIterator(
       }
     } else {
       while (inputRows.hasNext) {
-        val newInput = safeProjection(inputRows.next())
-        val groupingKey = groupingProjection.apply(newInput).copy()
-        val buffer: MutableRow = hashMap.getAggregationBufferByKey(groupingKey)
-        processRow(buffer, newInput)
+        if (!sortBased) {
+          val newInput = safeProjection(inputRows.next())
+          val groupingKey = groupingProjection.apply(newInput).copy()
+          val buffer: MutableRow = hashMap.getAggregationBufferByKey(groupingKey)
+          processRow(buffer, newInput)
 
-        // The the hash map gets too large, makes a sorted spill and clear the map.
-        if (hashMap.size >= fallbackCountThreshold) {
-          logInfo(
-            s"Aggregation hash map reaches threshold capacity ($fallbackCountThreshold entries), " +
-              s"spilling and falling back to sort based aggregation. " +
-              s"You may change the threshold by adjust option " +
-              SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key
-          )
+          // The the hash map gets too large, makes a sorted spill and clear the map.
+          if (hashMap.size >= fallbackCountThreshold) {
+            logInfo(
+              s"Aggregation hash map reaches threshold " +
+                s"capacity ($fallbackCountThreshold entries), spilling and falling back to sort" +
+                s" based aggregation. You may change the threshold by adjust option " +
+                SQLConf.OBJECT_AGG_SORT_BASED_FALLBACK_THRESHOLD.key
+            )
 
-          val sorter = hashMap.dumpToExternalSorter(groupingAttributes, aggregateFunctions)
+            // Fallbacks to sort-based aggregation
+            sortBased = true
 
-          if (externalSorter == null) {
-            // Actually this is where we officially switch to sort-based aggregation.
-            // TODO Makes this more explicit...
-            externalSorter = sorter
+            val aggBufferSorterDumpedFromHashMap = hashMap
+              .dumpToExternalSorter(groupingAttributes, aggregateFunctions)
+            sortBasedAggregationStore = new SortBasedAggregationStore(
+              aggBufferSorterDumpedFromHashMap,
+              StructType.fromAttributes(originalInputAttributes),
+              StructType.fromAttributes(groupingAttributes),
+              processRow,
+              mergeAggregationBuffer,
+              createNewAggregationBuffer())
+          }
+        } else {
+          val unsafeInputRow = inputRows.next() match {
+            case unsafeRow: UnsafeRow => unsafeRow
+            case row => inputUnsafeProjection(row)
+          }
+          val groupingKey = groupingProjection.apply(unsafeInputRow)
+          sortBasedAggregationStore.addInput(groupingKey, unsafeInputRow)
+        }
+      }
+    }
+
+    if (sortBased) {
+      sortBasedAggregationStore.destructiveIterator()
+    } else {
+      aggBufferIterator = hashMap.iterator
+    }
+  }
+}
+
+/**
+ * Aggregation store used to do sort-based aggregation.
+ *
+ * @param initialAggBufferSorter initial external sorter which stores sorted aggregation buffers.
+ *                               The aggregation buffers in this sorter is merged into
+ *                               SortBasedAggregationStore.
+ * @param inputSchema  The schema of input row
+ * @param groupingSchema The schema of grouping key
+ * @param updateInputRow  Function to update the aggregation buffer with input rows.
+ * @param mergeAggregationBuffer Function to merge the aggregation buffer with input aggregation
+ *                               buffer.
+ * @param makeEmptyAggregationBuffer Creates an empty aggregation buffer
+ */
+class SortBasedAggregationStore(
+    initialAggBufferSorter: UnsafeKVExternalSorter,
+    inputSchema: StructType,
+    groupingSchema: StructType,
+    updateInputRow: (MutableRow, InternalRow) => Unit,
+    mergeAggregationBuffer: (MutableRow, InternalRow) => Unit,
+    makeEmptyAggregationBuffer: => MutableRow) {
+
+  // external sorter to sort the input (grouping key + input row) with grouping key.
+  private val inputSorter = createExternalSorterForInput()
+  private val groupingKeyOrdering: BaseOrdering = GenerateOrdering.create(groupingSchema)
+
+  def addInput(groupingKey: UnsafeRow, inputRow: UnsafeRow): Unit = {
+    inputSorter.insertKV(groupingKey, inputRow)
+  }
+
+  /**
+   * Returns a destructive iterator of AggregationBufferEntry.
+   * Notice: it is illegal to call any method after `destructiveIterator()` has been called.
+   */
+  def destructiveIterator(): Iterator[AggregationBufferEntry] = {
+    new Iterator[AggregationBufferEntry] {
+      val inputIterator = inputSorter.sortedIterator()
+      var hasNextInput: Boolean = next(inputIterator)
+
+      val initialAggBufferIterator = initialAggBufferSorter.sortedIterator()
+      var hasNextAggBuffer: Boolean = next(initialAggBufferIterator)
+
+      private var result: AggregationBufferEntry = null
+      private var groupingKey: UnsafeRow = null
+
+      override def hasNext(): Boolean = {
+        result != null || findNextSortGroup()
+      }
+
+      override def next(): AggregationBufferEntry = {
+        val returnResult = result
+        result = null
+        returnResult
+      }
+
+      private def findNextSortGroup(): Boolean = {
+        if (hasNextInput || hasNextAggBuffer) {
+          // Find smaller key of the initialAggBufferIterator and initialAggBufferIterator
+          groupingKey = findGroupingKey()
+          result = new AggregationBufferEntry(groupingKey, makeEmptyAggregationBuffer)
+
+          while (hasNextInput &&
+            groupingKeyOrdering.compare(inputIterator.getKey, groupingKey) == 0) {
+            updateInputRow(inputIterator.getValue, result.aggregationBuffer)
+            hasNextInput = next(inputIterator)
+          }
+
+          while (hasNextAggBuffer &&
+            groupingKeyOrdering.compare(initialAggBufferIterator.getKey, groupingKey) == 0) {
+            mergeAggregationBuffer(initialAggBufferIterator.getValue, result.aggregationBuffer)
+            hasNextAggBuffer = next(initialAggBufferIterator)
+          }
+
+          true
+        } else {
+          false
+        }
+      }
+
+      private def next(iter: UnsafeKVExternalSorter#KVSorterIterator): Boolean = {
+        val hasNext = iter.next()
+        if (!hasNext) {
+          iter.close()
+        }
+        hasNext
+      }
+
+      private def findGroupingKey(): UnsafeRow = {
+        if (!hasNextInput) {
+          initialAggBufferIterator.getKey
+        } else if (!hasNextAggBuffer) {
+          inputIterator.getKey
+        } else {
+          val compareResult =
+            groupingKeyOrdering.compare(inputIterator.getKey, initialAggBufferIterator.getKey)
+          if (compareResult <= 0) {
+            inputIterator.getKey
           } else {
-            externalSorter.merge(sorter)
+            initialAggBufferIterator.getKey
           }
         }
       }
-
-      if (sortBased) {
-        // We've fallen back to sort-based aggregation, spills the remaining data in the hash map
-        // and merges the spill into the external sorter.
-        if (hashMap.size > 0) {
-          val newSorter = hashMap.dumpToExternalSorter(groupingAttributes, aggregateFunctions)
-          externalSorter.merge(newSorter)
-        }
-        prepareForSortBasedAggregation()
-      }
     }
   }
 
-  private def prepareForSortBasedAggregation(): Unit = {
-    logInfo("Preparing for sort-based aggregation.")
-
-    // Basically the value of the KVIterator returned by externalSorter
-    // will be just aggregation buffer, so we rewrite the aggregateExpressions to reflect it.
-    val newExpressions = aggregateExpressions.map {
-      case agg @ AggregateExpression(_, Partial, _, _) =>
-        agg.copy(mode = PartialMerge)
-      case agg @ AggregateExpression(_, Complete, _, _) =>
-        agg.copy(mode = Final)
-      case other => other
-    }
-    val newFunctions = initializeAggregateFunctions(newExpressions, 0)
-    val newInputAttributes = newFunctions.flatMap(_.inputAggBufferAttributes)
-    sortBasedProcessRow = generateProcessRow(newExpressions, newFunctions, newInputAttributes)
-
-    // Sets up iterator of sorted merged aggregation buffers of different groups from the sorter.
-    sortedKVIterator = externalSorter.sortedIterator()
-
-    // Pre-loads the first key-value pair from the sorted iterator to make hasNext idempotent.
-    sortedInputHasNewGroup = sortedKVIterator.next()
-
-    // Copy the first key and value (aggregation buffer).
-    if (sortedInputHasNewGroup) {
-      val key = sortedKVIterator.getKey
-      val value = sortedKVIterator.getValue
-      nextGroupingKey = key.copy()
-      currentGroupingKey = key.copy()
-      firstRowInNextGroup = value.copy()
-    }
-  }
-
-  // Processes rows in the current group. It will stop when it find a new group.
-  private def processCurrentSortedGroup(): Unit = {
-    // First, we need to copy nextGroupingKey to currentGroupingKey.
-    currentGroupingKey.copyFrom(nextGroupingKey)
-    // Now, we will start to find all rows belonging to this group.
-    // We create a variable to track if we see the next group.
-    var findNextPartition = false
-    // firstRowInNextGroup is the first row of this group. We first process it.
-    sortBasedProcessRow(sortBasedAggregationBuffer, firstRowInNextGroup)
-
-    // The search will stop when we see the next group or there is no
-    // input row left in the iterator.
-    // Pre-load the first key-value pair to make the condition of the while loop
-    // has no action (we do not trigger loading a new key-value pair
-    // when we evaluate the condition).
-    var hasNext = sortedKVIterator.next()
-    while (!findNextPartition && hasNext) {
-      // Get the grouping key and value (aggregation buffer).
-      val groupingKey = sortedKVIterator.getKey
-      val inputAggregationBuffer = sortedKVIterator.getValue
-
-      // Check if the current row belongs the current input row.
-      if (currentGroupingKey.equals(groupingKey)) {
-        sortBasedProcessRow(sortBasedAggregationBuffer, inputAggregationBuffer)
-
-        hasNext = sortedKVIterator.next()
-      } else {
-        // We find a new group.
-        findNextPartition = true
-        nextGroupingKey.copyFrom(groupingKey)
-        firstRowInNextGroup.copyFrom(inputAggregationBuffer)
-      }
-    }
-    // We have not seen a new group. It means that there is no new row in the input
-    // iterator. The current group is the last group of the sortedKVIterator.
-    if (!findNextPartition) {
-      sortedInputHasNewGroup = false
-      sortedKVIterator.close()
-    }
+  private def createExternalSorterForInput(): UnsafeKVExternalSorter = {
+    new UnsafeKVExternalSorter(
+      groupingSchema,
+      inputSchema,
+      SparkEnv.get.blockManager,
+      SparkEnv.get.serializerManager,
+      TaskContext.get().taskMemoryManager().pageSizeBytes,
+      SparkEnv.get.conf.getLong(
+        "spark.shuffle.spill.numElementsForceSpillThreshold",
+        UnsafeExternalSorter.DEFAULT_NUM_ELEMENTS_FOR_SPILL_THRESHOLD),
+      null
+    )
   }
 }
