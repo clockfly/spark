@@ -67,7 +67,7 @@ case class InMemoryRelation(
       child.sqlContext.sparkContext.collectionAccumulator[InternalRow])
   extends logical.LeafNode with MultiInstanceRelation {
 
-  override protected def innerChildren: Seq[QueryPlan[_]] = Seq(child)
+  override protected def innerChildren: Seq[QueryPlan[_]] = Seq.empty[QueryPlan[_]]
 
   override def producedAttributes: AttributeSet = outputSet
 
@@ -154,7 +154,7 @@ case class InMemoryRelation(
 
     cached.setName(
       tableName.map(n => s"In-memory table $n")
-        .getOrElse(StringUtils.abbreviate(child.toString, 1024)))
+        .getOrElse(StringUtils.abbreviate(child.simpleString, 1024)))
     _cachedColumnBuffers = cached
   }
 
