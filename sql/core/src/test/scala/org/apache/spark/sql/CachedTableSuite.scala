@@ -145,14 +145,14 @@ class CachedTableSuite extends QueryTest with SQLTestUtils with SharedSQLContext
     spark.catalog.cacheTable("testData")
 
     assertCached(spark.table("testData"))
-    assert(spark.table("testData").queryExecution.withCachedData match {
+    assert(spark.table("testData").queryExecution.analyzed match {
       case _: InMemoryRelation => true
       case _ => false
     })
 
     spark.catalog.uncacheTable("testData")
     assert(!spark.catalog.isCached("testData"))
-    assert(spark.table("testData").queryExecution.withCachedData match {
+    assert(spark.table("testData").queryExecution.analyzed match {
       case _: InMemoryRelation => false
       case _ => true
     })
@@ -165,14 +165,14 @@ class CachedTableSuite extends QueryTest with SQLTestUtils with SharedSQLContext
     assertCached(spark.table("testData"))
 
     assertResult(1, "InMemoryRelation not found, testData should have been cached") {
-      spark.table("testData").queryExecution.withCachedData.collect {
+      spark.table("testData").queryExecution.analyzed.collect {
         case r: InMemoryRelation => r
       }.size
     }
 
     spark.catalog.cacheTable("testData")
     assertResult(0, "Double InMemoryRelations found, cacheTable() is not idempotent") {
-      spark.table("testData").queryExecution.withCachedData.collect {
+      spark.table("testData").queryExecution.analyzed.collect {
         case r @ InMemoryRelation(_, _, _, _, _: InMemoryTableScanExec, _) => r
       }.size
     }
@@ -282,7 +282,7 @@ class CachedTableSuite extends QueryTest with SQLTestUtils with SharedSQLContext
 
   test("InMemoryRelation statistics") {
     sql("CACHE TABLE testData")
-    spark.table("testData").queryExecution.withCachedData.collect {
+    spark.table("testData").queryExecution.analyzed.collect {
       case cached: InMemoryRelation =>
         val actualSizeInBytes = (1 to 100).map(i => 4 + i.toString.length + 4).sum
         assert(cached.statistics.sizeInBytes === actualSizeInBytes)
@@ -339,12 +339,12 @@ class CachedTableSuite extends QueryTest with SQLTestUtils with SharedSQLContext
 
     val toBeCleanedAccIds = new HashSet[Long]
 
-    val accId1 = spark.table("t1").queryExecution.withCachedData.collect {
+    val accId1 = spark.table("t1").queryExecution.analyzed.collect {
       case i: InMemoryRelation => i.batchStats.id
     }.head
     toBeCleanedAccIds += accId1
 
-    val accId2 = spark.table("t1").queryExecution.withCachedData.collect {
+    val accId2 = spark.table("t1").queryExecution.analyzed.collect {
       case i: InMemoryRelation => i.batchStats.id
     }.head
     toBeCleanedAccIds += accId2
@@ -561,7 +561,7 @@ class CachedTableSuite extends QueryTest with SQLTestUtils with SharedSQLContext
 
     spark.catalog.cacheTable("localRelation")
     assert(
-      localRelation.queryExecution.withCachedData.collect {
+      localRelation.queryExecution.analyzed.collect {
         case i: InMemoryRelation => i
       }.size == 1)
   }

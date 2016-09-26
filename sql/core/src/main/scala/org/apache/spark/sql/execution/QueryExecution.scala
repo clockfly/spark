@@ -62,16 +62,15 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
 
   lazy val analyzed: LogicalPlan = {
     SparkSession.setActiveSession(sparkSession)
-    sparkSession.sessionState.analyzer.execute(logical)
+    val plan = sparkSession.sessionState.analyzer.execute(logical)
+    sparkSession.sharedState.cacheManager.useCachedData(plan)
   }
 
-  lazy val withCachedData: LogicalPlan = {
+  lazy val optimizedPlan: LogicalPlan = {
     assertAnalyzed()
     assertSupported()
-    sparkSession.sharedState.cacheManager.useCachedData(analyzed)
+    sparkSession.sessionState.optimizer.execute(analyzed)
   }
-
-  lazy val optimizedPlan: LogicalPlan = sparkSession.sessionState.optimizer.execute(withCachedData)
 
   lazy val sparkPlan: SparkPlan = {
     SparkSession.setActiveSession(sparkSession)
@@ -245,5 +244,13 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
       println(org.apache.spark.sql.execution.debug.codegenString(executedPlan))
       // scalastyle:on println
     }
+  }
+
+  private def time[T](msg: String, f: => T): T = {
+    val start = System.currentTimeMillis()
+    val result = f
+    val end = System.currentTimeMillis()
+    System.out.print("Taking time to " + msg + ":" + (end - start) + "\n")
+    result
   }
 }

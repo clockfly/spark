@@ -214,7 +214,7 @@ abstract class QueryTest extends PlanTest {
    * Asserts that a given [[Dataset]] will be executed using the given number of cached results.
    */
   def assertCached(query: Dataset[_], numCachedTables: Int = 1): Unit = {
-    val planWithCaching = query.queryExecution.withCachedData
+    val planWithCaching = query.queryExecution.analyzed
     val cachedData = planWithCaching collect {
       case cached: InMemoryRelation => cached
     }
