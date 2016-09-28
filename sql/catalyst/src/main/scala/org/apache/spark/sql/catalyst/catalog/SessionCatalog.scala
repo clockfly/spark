@@ -749,6 +749,8 @@ class SessionCatalog(
    */
   def makeFunctionBuilder(name: String, functionClassName: String): FunctionBuilder = {
     // TODO: at least support UDAFs here
+
+    // TODO: Make this an extension point to load functions by reflection.
     throw new UnsupportedOperationException("Use sqlContext.udf.register(...) instead.")
   }
 

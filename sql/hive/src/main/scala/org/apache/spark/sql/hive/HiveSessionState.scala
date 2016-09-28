@@ -28,6 +28,8 @@ import org.apache.spark.sql.internal.SessionState
 /**
  * A class that holds all session-specific state in a given [[SparkSession]] backed by Hive.
  */
+
+// TODO: Merge with SessionState
 private[hive] class HiveSessionState(sparkSession: SparkSession)
   extends SessionState(sparkSession) {
 
